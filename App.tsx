@@ -1,117 +1,176 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+// ... (previous imports)
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'; 
+const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
+interface AddressFeature {
+  place_name: string;
 }
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+const App: React.FC = () => {
+  const [destination, setDestination] = useState('');
+  const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
+  const [startingLocation, setStartingLocation] = useState('');
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  useEffect(() => {
+    fetchUserLocation();
+  }, []);
+
+  const fetchUserLocation = () => {
+    Geolocation.getCurrentPosition(
+      position => {
+        const { latitude, longitude } = position.coords;
+        reverseGeocode(latitude, longitude);
+      },
+      error => {
+        console.error('Error getting user location:', error);
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
+    );
   };
 
+  const reverseGeocode = async (latitude: number, longitude: number) => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.features && data.features.length > 0) {
+          const nearestAddress = (data.features[0] as AddressFeature).place_name || '';
+          setStartingLocation(nearestAddress);
+        }
+      } else {
+        console.error('Error fetching user location address:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching user location address:', error);
+    }
+  };
+
+  const fetchPotentialAddresses = async () => {
+    try {
+      if (destination.length > 0) {
+        const response = await fetch(
+          `${API_BASE_URL}${encodeURIComponent(destination)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setPotentialAddresses(data.features || []);
+        } else {
+          console.error('Error fetching potential addresses:', response.status);
+        }
+      } else {
+        setPotentialAddresses([]);
+      }
+    } catch (error) {
+      console.error('Error fetching potential addresses:', error);
+    }
+  };
+
+  const handleDestinationChange = (text: string) => {
+    setDestination(text);
+    fetchPotentialAddresses();
+  };
+
+  const handleAddressSelect = (selectedAddress: string) => {
+    setDestination(selectedAddress);
+    setPotentialAddresses([]); // Clear address suggestions
+  };
+
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <TextInput
+        placeholder="Current Location"
+        style={styles.input}
+        value={startingLocation}
+        onChangeText={text => setStartingLocation(text)}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
+      <TextInput
+        placeholder="Destination"
+        style={styles.input}
+        value={destination}
+        onChangeText={handleDestinationChange}
+      />
+      {potentialAddresses.length > 0 && (
+        <ScrollView style={styles.addressesContainer}>
+          {potentialAddresses.map((address, index) => (
+            <TouchableOpacity
+              key={index}
+              onPress={() => handleAddressSelect(address.place_name)}
+            >
+              <Text style={styles.addressText}>{address.place_name || ''}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+      <Text style={styles.header}>Directions</Text>
+      <ScrollView style={styles.directionsContainer}>
+        <TextInput
+          placeholder="1."
+          style={styles.directionInput}
+        />
+        <TextInput
+          placeholder="2."
+          style={styles.directionInput}
+        />
+        <TextInput
+          placeholder="3."
+          style={styles.directionInput}
+        />
+        <TextInput
+          placeholder="4."
+          style={styles.directionInput}
+        />
       </ScrollView>
-    </SafeAreaView>
+      <Button title="Use Current Location" onPress={fetchUserLocation} />
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#fff',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  input: {
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 10,
+    marginBottom: 10,
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  header: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
-  highlight: {
-    fontWeight: '700',
+  addressesContainer: {
+    maxHeight: 150,
+    marginBottom: 10,
+  },
+  addressText: {
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 10,
+    marginBottom: 5,
+  },
+  directionsContainer: {
+    flex: 1,
+  },
+  directionInput: {
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 10,
+    marginBottom: 10,
+    textAlignVertical: 'top',
   },
 });
 
