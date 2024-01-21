@@ -64,3 +64,8 @@ yarn-error.log
 
 # testing
 /coverage
+
+.prettierrc.js
+Gemfile
+jest.config.js
+metro.config.js
