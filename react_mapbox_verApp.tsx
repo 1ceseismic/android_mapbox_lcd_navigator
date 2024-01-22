@@ -1,39 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
+import {MapView } from '@rnmapbox/maps';
+//import MapboxNavigation from '@sqware/react-native-mapbox-navigation';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyBSLHFzNpmj7x5NImV6SV6JcERThBaBqvo'; 
-const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
 
-const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'; 
-const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/'
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'; // Replace with your Mapbox Access Token
+const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/';
 
 interface AddressFeature {
   place_name: string;
 }
 
-interface Step {
-  distance: any;
-  html_instructions: string;
-  instructions: string;
-}
-
-interface Leg {
-  steps: Step[];
-}
-
-interface Route {
-  legs: Leg[];
-}
-
-interface DirectionsResponse {
-  routes: Route[];
-}
-
 const App: React.FC = () => {
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
-  const [directions, setDirections] = useState<DirectionsResponse | null>(null);
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
 
@@ -51,7 +32,7 @@ const App: React.FC = () => {
       error => {
         console.error('Error getting user location:', error);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
     );
   };
 
@@ -95,26 +76,6 @@ const App: React.FC = () => {
       console.error('Error fetching potential addresses:', error);
     }
   };
-  
-  const handleGetDirections = async () => {
-    try {
-      const currentLocation = encodeURIComponent(startingLocation); // Use current location as origin
-      const destinationLocation = encodeURIComponent(destination);
-  
-      const response = await fetch(
-        `${GOOGLE_DIRECTIONS_API}?origin=${currentLocation}&destination=${destinationLocation}&key=${GOOGLE_MAPS_API_KEY}`
-      );
-  
-      if (response.ok) {
-        const data: DirectionsResponse = await response.json();
-        setDirections(data);
-      } else {
-        console.error('Error fetching directions:', response.status);
-      }
-    } catch (error) {
-      console.error('Error fetching directions:', error);
-    }
-  };
 
   const handleDestinationChange = (text: string) => {
     setDestination(text);
@@ -127,19 +88,10 @@ const App: React.FC = () => {
     setPotentialAddresses([]); // Clear address suggestions
   };
 
-  const removeHtmlTags = (text: string) => {
-    return text.replace(/<\/?[^>]+(>|$)/g, ''); // Regex to remove HTML tags
+  const startNavigation = () => {
+    setNavigationStarted(true);
   };
-
-  const formatDistance = (distance: string, unit: string) => {
-    const distanceValue = parseFloat(distance);
-    if (distanceValue < 1000) {
-      return `${(distanceValue)*1000}m`;
-    } else {
-      const distanceInKm = distanceValue / 1000;
-      return `${distanceInKm.toFixed(2)} km`;
-    }
-  };
+  
 
   return (
     <View style={styles.container}>
@@ -167,32 +119,15 @@ const App: React.FC = () => {
           ))}
         </ScrollView>
       )}
-      <Text style={styles.header}>balls8cker_locat0r33</Text>
-
-      <Button title="Get Directions" onPress={handleGetDirections} />
-
-      {directions && (
-        <ScrollView style={styles.directionsContainer}>
-          {directions.routes.map((route, routeIndex) => (
-            <View key={routeIndex}>
-              {route.legs.map((leg, legIndex) => (
-                <View key={legIndex}>
-                  {leg.steps.map((step, stepIndex) => (
-                    <Text key={stepIndex} style={{ fontWeight: 'bold' }}>
-
-                    {`${stepIndex + 1}. In ${formatDistance(step.distance.text, step.distance.unit)}, ${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
-                      
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </View>
-          ))}
-        </ScrollView>
-      )}
+      <Text style={styles.header}>Directions</Text>
+      
+    
+      <Button title="Use Current Location" onPress={fetchUserLocation} />
+      <Button title="Get Directions" onPress={startNavigation} />
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -205,13 +140,6 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     padding: 10,
     marginBottom: 10,
-  },
-  directionsContainer: {
-    flex: 1,
-    marginTop: 10,
-  },
-  directionsText: {
-    marginBottom: 5,
   },
   header: {
     fontSize: 20,
@@ -227,6 +155,9 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     padding: 10,
     marginBottom: 5,
+  },
+  directionsContainer: {
+    flex: 1,
   },
   directionInput: {
     borderWidth: 1,
