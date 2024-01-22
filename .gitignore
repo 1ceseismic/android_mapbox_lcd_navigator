@@ -4,6 +4,13 @@
 
 # Xcode
 #
+.token
+*.token
+gg_priv.token
+mp_priv.token
+mp_public.token
+tokens/
+
 build/
 *.pbxuser
 !default.pbxuser
@@ -33,6 +40,7 @@ local.properties
 .cxx/
 *.keystore
 !debug.keystore
+
 
 # node.js
 #

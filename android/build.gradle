@@ -32,6 +32,8 @@ allprojects {
                 
                 username = 'mapbox'
                 password = 'sk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xybnlzeWM0MDRoNTJybDk1dmljdDZqdyJ9.SKJgDC49UlcTU862ftwXyA'
+                //password = System.getenv("MAPBOX_PASSWORD") ?: project.hasProperty("mapboxPassword") ? project.mapboxPassword : ""
+
             }
         }
     }
