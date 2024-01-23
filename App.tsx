@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 const { width: screenWidth } = Dimensions.get('window');
@@ -20,6 +20,7 @@ interface AddressFeature {
 }
 
 interface Step {
+  start_location: any;
   maneuver: any;
   distance: any;
   html_instructions: string;
@@ -45,44 +46,43 @@ const App: React.FC = () => {
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
 
+  const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [routeSteps, setRouteSteps] = useState<Step[]>([]);
+  const [distanceToNextStep, setDistanceToNextStep] = useState<number | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [displayedStepIndex, setDisplayedStepIndex] = useState(0);
+  const [showAllDirections, setShowAllDirections] = useState(false);
+
+  const handleShowAllDirections = () => {
+    setShowAllDirections((prevValue) => !prevValue);
+  };
+
 
   useEffect(() => {
     fetchUserLocation();
   }, []);
 
-  const [roundaboutImage, setRoundaboutImage] = useState<string | null>(null);
 
-  const [instructionIcons, setInstructionIcons] = useState<{ [key: string]: any }>({
-    'undefined': require('./icons/png/light/direction_turn_straight.png'),
-    'turn-left': require('./icons/png/light/direction_turn_left.png'),
-    'turn-right': require('./icons/png/light/direction_turn_right.png'),
-    'turn-slight-left': require('./icons/png/light/direction_turn_slight_left.png'),
-    'turn-slight-right': require('./icons/png/light/direction_turn_slight_right.png'),
-    'turn-sharp-left': require('./icons/png/light/direction_turn_sharp_left.png'),
-    'turn-sharp-right': require('./icons/png/light/direction_turn_sharp_right.png'),
-    'straight': require('./icons/png/light/direction_turn_straight.png'),
-    'keep-left': require('./icons/png/light/direction_fork_slight_left.png'),
-    'keep-right': require('./icons/png/light/direction_fork_slight_right.png'),
-    'uturn-left': require('./icons/png/light/direction_uturn_left.png'),
-    'uturn-right': require('./icons/png/light/direction_uturn_right.png'),
-    'merge': require('./icons/png/light/direction_merge_right.png'),
-    'ramp-left': require('./icons/png/light/direction_turn_left.png'),
-    'ramp-right': require('./icons/png/light/direction_turn_right.png'),
-    'fork-left': require('./icons/png/light/direction_fork_left.png'),
-    'fork-right': require('./icons/png/light/direction_fork_right.png'),
+  useEffect(() => {
+    // Start monitoring the device's location for live navigation
+    if (navigationStarted) {
+      const locationUpdateInterval = setInterval(() => {
+        fetchUserLocation();
+        updateRouteIfClose();
+      }, 80000);  // check user location + claculation delay
 
-    'roundabout-left': require('./icons/png/light/direction_rotary_left.png'),
-    'roundabout-right': require('./icons/png/light/direction_rotary_right.png'),
-    'roundabout-continue': require('./icons/png/light/direction_roundabout_straight.png'),
-
-    
-  });
+  
+      return () => clearInterval(locationUpdateInterval);
+    }
+  }, [navigationStarted, currentStepIndex]);
 
 
   const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
       position => {
         const { latitude, longitude } = position.coords;
+        setCurrentLocation({ latitude, longitude });
         reverseGeocode(latitude, longitude);
         console.log('User location: ' + latitude + ', ' + longitude)
       },
@@ -136,7 +136,7 @@ const App: React.FC = () => {
 
   const handleGetDirections = async () => {
     try {
-      const currentLocation = encodeURIComponent(startingLocation); // Use current location as origin
+      const currentLocation = encodeURIComponent(startingLocation); 
       const destinationLocation = encodeURIComponent(destination);
   
       const response = await fetch(
@@ -144,53 +144,89 @@ const App: React.FC = () => {
       );
   
       if (response.ok) {
-        console.log('located sagmole')
         const data: DirectionsResponse = await response.json();
         setDirections(data);
 
-        data.routes.forEach((route, routeIndex) => {
-          route.legs.forEach((leg, legIndex) => {
-            leg.steps.forEach((step, stepIndex) => {
-              console.log('Step Object:', step);
-              console.log('Maneuver Type:', step.maneuver);
-
-              const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
-
-              if (maneuverString && maneuverString.includes('roundabout')) {
-                console.log('Roundabout included')
-                const instructionString = step.html_instructions.toString()
-
-                const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
-
-                const exitNumber = match ? match[1] : null;
-                
-                if (exitNumber !== null) {
-                  console.log('Exit Number:', exitNumber);
-                  const exitNumberImageMapping: Record<string, string> = {
-                    '1': require('./icons/png/light/direction_roundabout_1st.png'),
-                    '2': require('./icons/png/light/direction_roundabout_2nd.png'),                   
-                    '3': require('./icons/png/light/direction_roundabout_3rd.png'),
-                  };
-
-                  const imageURL = exitNumberImageMapping[exitNumber] || null;
-                  setRoundaboutImage(imageURL);
-
-               }
-              }
-              else {
-              
-                console.log('No Roundabout')
-              }
-            });
+        // extract all steps from the route
+        const steps: Step[] = [];
+        data.routes.forEach((route) => {
+          route.legs.forEach((leg) => {
+            steps.push(...leg.steps);
+            
           });
         });
-        
+
+          //printing steps for debugging
+          data.routes.forEach((route, routeIndex) => {
+            route.legs.forEach((leg, legIndex) => {
+              leg.steps.forEach((step, stepIndex) => {
+                console.log('Step Object:', step);
+                console.log('Maneuver Type:', step.maneuver);
+              });
+            });
+          });
+
+        setRouteSteps(steps);
+        setNavigationStarted(true); // start live updates
       } else {
         console.error('Error fetching directions:', response.status);
       }
     } catch (error) {
       console.error('Error fetching directions:', error);
     }
+  };
+
+  const updateRouteIfClose = () => {
+    if (directions && currentLocation.latitude !== 0 && currentLocation.longitude !== 0) {
+      const nextStep = routeSteps[currentStepIndex];
+
+      const calculatedDistanceToNextStep = calculateDistance(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        nextStep.start_location.lat,
+        nextStep.start_location.lng
+      );
+
+      console.log('Next Step Coordinates:', nextStep.start_location);
+
+      if (calculatedDistanceToNextStep < 20) { // to activate the next step en route
+        setCompletedSteps([...completedSteps, currentStepIndex]);
+        setCurrentStepIndex((prevIndex) => prevIndex + 1);
+        setDisplayedStepIndex((prevIndex) => prevIndex + 1);
+
+        console.log('Completed Steps:', completedSteps)
+
+        if (currentStepIndex + 1 === routeSteps.length) { //nav complete stop live updates
+          setNavigationStarted(false);
+        }
+      }
+
+      setDistanceToNextStep(calculatedDistanceToNextStep);
+    }
+  };
+
+  const testCompletion = () => {
+    setCompletedSteps([0]);
+    setCurrentStepIndex(1);
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // radius of the earth in km
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // Distance in km
+
+    return distance * 1000; // Convert to meters
+  };
+
+  const deg2rad = (deg: number) => {
+    return deg * (Math.PI / 180);
   };
 
   const handleDestinationChange = (text: string) => {
@@ -218,6 +254,31 @@ const App: React.FC = () => {
     }
   };
 
+  const [instructionIcons, setInstructionIcons] = useState<{ [key: string]: any }>({
+    'undefined': require('./icons/png/light/direction_turn_straight.png'),
+    'turn-left': require('./icons/png/light/direction_turn_left.png'),
+    'turn-right': require('./icons/png/light/direction_turn_right.png'),
+    'turn-slight-left': require('./icons/png/light/direction_turn_slight_left.png'),
+    'turn-slight-right': require('./icons/png/light/direction_turn_slight_right.png'),
+    'turn-sharp-left': require('./icons/png/light/direction_turn_sharp_left.png'),
+    'turn-sharp-right': require('./icons/png/light/direction_turn_sharp_right.png'),
+    'straight': require('./icons/png/light/direction_turn_straight.png'),
+    'keep-left': require('./icons/png/light/direction_fork_slight_left.png'),
+    'keep-right': require('./icons/png/light/direction_fork_slight_right.png'),
+    'uturn-left': require('./icons/png/light/direction_uturn_left.png'),
+    'uturn-right': require('./icons/png/light/direction_uturn_right.png'),
+    'merge': require('./icons/png/light/direction_merge_right.png'),
+    'ramp-left': require('./icons/png/light/direction_turn_left.png'),
+    'ramp-right': require('./icons/png/light/direction_turn_right.png'),
+    'fork-left': require('./icons/png/light/direction_fork_left.png'),
+    'fork-right': require('./icons/png/light/direction_fork_right.png'),
+
+    'roundabout-left': require('./icons/png/light/direction_rotary_left.png'),
+    'roundabout-right': require('./icons/png/light/direction_rotary_right.png'),
+    'roundabout-continue': require('./icons/png/light/direction_roundabout_straight.png'),
+
+    
+  });
   return (
     <View style={styles.container}>
       <TextInput
@@ -244,25 +305,75 @@ const App: React.FC = () => {
           ))}
         </ScrollView>
       )}
-      <Text style={styles.header}>balls8cker_locat0r33</Text>
 
+      <Text style={styles.header}>saggym0le navig8tor</Text>
       <Button title="Get Directions" onPress={handleGetDirections} />
 
-      {directions && (
+      <TouchableOpacity onPress={testCompletion}>
+        <Text style={styles.testButton}>Test Completion</Text> 
+      </TouchableOpacity>
+
+      {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
+        <View style={styles.currentStepContainer}>
+          <View style={styles.directionsIcon}>
+            {instructionIcons[directions.routes[0].legs[0].steps[displayedStepIndex].maneuver] ? (
+
+              <Image source={instructionIcons[directions.routes[0].legs[0].steps[displayedStepIndex].maneuver]} style={{ width: 30, height: 30 }} /> //single maneuver image displayed
+            ) : null}
+          </View>
+          <Text style={styles.directionsText}>
+            {`${displayedStepIndex + 1}. ${
+              displayedStepIndex > 0
+                ? `In ${formatDistance(
+                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.text,
+                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.unit
+                  )}, `
+                : ''
+            }${removeHtmlTags(
+              directions.routes[0].legs[0].steps[displayedStepIndex].html_instructions ||
+                directions.routes[0].legs[0].steps[displayedStepIndex].instructions ||
+                ''
+            )}`}
+          </Text>
+        </View>
+      )}
+
+ 
+  <TouchableOpacity onPress={handleShowAllDirections}>
+        <Text style={styles.showAllDirectionsButton}>
+          {showAllDirections ? 'Hide All Directions' : 'Show All Directions'}
+        </Text>
+      </TouchableOpacity>
+
+
+  {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
         <ScrollView style={styles.directionsContainer}>
           {directions.routes.map((route, routeIndex) => (
             <View key={routeIndex}>
               {route.legs.map((leg, legIndex) => (
                 <View key={legIndex}>
                   {leg.steps.map((step, stepIndex) => (
-                    <View key={stepIndex} style={styles.directionsRow}>
+                    <View
+                      key={stepIndex}
+                      style={[
+                        styles.directionsRow,
+                        completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,
+                      ]}
+                    >
                       <View style={styles.directionsIcon}>
-                      {step.maneuver && instructionIcons[step.maneuver] ? (
-                          <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30,}} />
+                        {instructionIcons[step.maneuver] ? (
+                          <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} /> //maneuver image 
                         ) : null}
                       </View>
                       <Text style={[styles.directionsText, { color: 'white', maxWidth: screenWidth - 60 }]}>
-                        {`${stepIndex + 1}. ${stepIndex > 0 ? `In ${formatDistance(leg.steps[stepIndex - 1].distance.text, leg.steps[stepIndex - 1].distance.unit)}, ` : ''}${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
+                        {`${stepIndex + 1}. ${
+                          stepIndex > 0
+                            ? `In ${formatDistance(
+                                leg.steps[stepIndex - 1].distance.text,
+                                leg.steps[stepIndex - 1].distance.unit
+                              )}, `
+                            : ''
+                        }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
                       </Text>
                     </View>
                   ))}
@@ -272,9 +383,11 @@ const App: React.FC = () => {
           ))}
         </ScrollView>
       )}
+      
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   directionsRow: {
@@ -282,6 +395,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  
   directionsIcon: {
     marginRight: 3,
   },
@@ -291,12 +405,39 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white', 
   },
+  currentStepContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  distanceText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: 'white',
+  },
+  completedStep: {
+    backgroundColor: 'green', 
+  },
+  testButton: {
+    color: 'white',
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'blue',
+    textAlign: 'center',
+  },
+  showAllDirectionsButton: {
+    color: 'white',
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'blue',
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     padding: 5,
-    backgroundColor: '#222', // Dark
+    backgroundColor: '#222', // dark
     color: 'white',
-    //backgroundColor: '#fff',
+    
   },
   input: {
     color: 'white',
@@ -340,4 +481,3 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
