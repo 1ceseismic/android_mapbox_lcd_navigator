@@ -3,13 +3,25 @@
 .DS_Store
 
 # Xcode
-#
+
+#misc
 .token
 *.token
 gg_priv.token
 mp_priv.token
 mp_public.token
 tokens/
+Gemfile
+jest.config.js
+metro.config.js
+react_mapbox_verApp.tsx
+__tests__
+.watchmanconfig
+.prettierrc.js
+tsconfig.json
+babel.config.js
+
+
 
 build/
 *.pbxuser
