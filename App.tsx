@@ -2,16 +2,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 const { width: screenWidth } = Dimensions.get('window');
-
-
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'
 const GOOGLE_MAPS_API_KEY = 'AIzaSyBSLHFzNpmj7x5NImV6SV6JcERThBaBqvo'; 
-
 const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/'
 const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
 
+import MapView, {PROVIDER_GOOGLE, Polyline, Marker } from 'react-native-maps';
+import {enableLatestRenderer} from 'react-native-maps';
+
+//import MapboxDirectionsFactory from '@mapbox/mapbox-sdk/services/directions';
+
 // const Googletokenpath = '/tokens/gg_priv.txt';
 //  const Mapboxtokenpath = '/tokens/mb_public.txt';
+
+enableLatestRenderer();
 
 const pathToLight = './icons/png/light/';
 
@@ -46,7 +50,6 @@ const App: React.FC = () => {
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
 
-  const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [routeSteps, setRouteSteps] = useState<Step[]>([]);
   const [distanceToNextStep, setDistanceToNextStep] = useState<number | null>(null);
@@ -54,15 +57,25 @@ const App: React.FC = () => {
   const [displayedStepIndex, setDisplayedStepIndex] = useState(0);
   const [showAllDirections, setShowAllDirections] = useState(false);
 
+  const [userLocation, setUserLocation] = useState(null);
+  const [routeCoordinates, setRouteCoordinates] = useState([]); 
+  const [mapVisible, setMapVisible] = useState(false);
+
+  
+  const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
+
   const handleShowAllDirections = () => {
     setShowAllDirections((prevValue) => !prevValue);
   };
 
 
+  const handleShowMap = () => {
+    setMapVisible((prevValue) => !prevValue);
+  };
+
   useEffect(() => {
     fetchUserLocation();
   }, []);
-
 
   useEffect(() => {
     // Start monitoring the device's location for live navigation
@@ -71,8 +84,6 @@ const App: React.FC = () => {
         fetchUserLocation();
         updateRouteIfClose();
       }, 80000);  // check user location + claculation delay
-
-  
       return () => clearInterval(locationUpdateInterval);
     }
   }, [navigationStarted, currentStepIndex]);
@@ -338,15 +349,47 @@ const App: React.FC = () => {
         </View>
       )}
 
- 
   <TouchableOpacity onPress={handleShowAllDirections}>
         <Text style={styles.showAllDirectionsButton}>
           {showAllDirections ? 'Hide All Directions' : 'Show All Directions'}
         </Text>
       </TouchableOpacity>
+    
+      {!mapVisible ? (
+        <TouchableOpacity onPress={handleShowMap}>
+          <Text style={styles.showMapButton}>Show Map</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity onPress={handleShowMap}>
+          <Text style={styles.hideMapButton}>Hide Map</Text>
+        </TouchableOpacity>
+      )}
+     
+        
+    {/* Map component */}
+    {mapVisible && (
+        <MapView
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          initialRegion={{ ...currentLocation, latitudeDelta: 0.0922, longitudeDelta: 0.0421 }}
+        >
+          {/* Draw polyline using route coordinates */}
+          {routeCoordinates.length > 0 && (
+            <Polyline coordinates={routeCoordinates} strokeWidth={2} strokeColor="blue" />
+          )}
+
+          {/* Markers for start and end points */}
+          {routeCoordinates.length > 0 && (
+            <Marker coordinate={routeCoordinates[0]} title="Start" />
+          )}
+          {routeCoordinates.length > 0 && (
+            <Marker coordinate={routeCoordinates[routeCoordinates.length - 1]} title="End" />
+          )}
+        </MapView>
+      )}
 
 
-  {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
+    {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
         <ScrollView style={styles.directionsContainer}>
           {directions.routes.map((route, routeIndex) => (
             <View key={routeIndex}>
@@ -355,11 +398,8 @@ const App: React.FC = () => {
                   {leg.steps.map((step, stepIndex) => (
                     <View
                       key={stepIndex}
-                      style={[
-                        styles.directionsRow,
-                        completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,
-                      ]}
-                    >
+                      style={[ 
+                        styles.directionsRow, completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,]}>
                       <View style={styles.directionsIcon}>
                         {instructionIcons[step.maneuver] ? (
                           <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} /> //maneuver image 
@@ -432,12 +472,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'blue',
     textAlign: 'center',
   },
+  showMapButton: {
+    color: 'white',
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'green',
+    textAlign: 'center',
+  },
+  hideMapButton: {
+    color: 'white',
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'red',
+    textAlign: 'center',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
   container: {
     flex: 1,
     padding: 5,
     backgroundColor: '#222', // dark
-    color: 'white',
-    
+    color: 'white', 
   },
   input: {
     color: 'white',
@@ -481,3 +537,7 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
+function setShowMap(arg0: boolean) {
+  throw new Error('Function not implemented.');
+}
+
