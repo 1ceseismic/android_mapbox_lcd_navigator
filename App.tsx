@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard  } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
+import MapViewDirections from 'react-native-maps-directions';
+
 const { width: screenWidth } = Dimensions.get('window');
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'
 const GOOGLE_MAPS_API_KEY = 'AIzaSyBSLHFzNpmj7x5NImV6SV6JcERThBaBqvo'; 
 const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/'
 const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
 
-import MapView, {PROVIDER_GOOGLE, Polyline, Marker } from 'react-native-maps';
+import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview } from 'react-native-maps';
+import axios from 'axios';
 import {enableLatestRenderer} from 'react-native-maps';
 
 //import MapboxDirectionsFactory from '@mapbox/mapbox-sdk/services/directions';
@@ -24,14 +27,16 @@ interface AddressFeature {
 }
 
 interface Step {
-  start_location: any;
   maneuver: any;
   distance: any;
   html_instructions: string;
   instructions: string;
+  start_location: { lat: number; lng: number };
+  end_location: { lat: number; lng: number };
 }
 
 interface Leg {
+  start_location: any;
   steps: Step[];
 }
 
@@ -44,6 +49,8 @@ interface DirectionsResponse {
 }
 
 const App: React.FC = () => {
+
+
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
@@ -58,19 +65,17 @@ const App: React.FC = () => {
   const [showAllDirections, setShowAllDirections] = useState(false);
 
   const [userLocation, setUserLocation] = useState(null);
-  const [routeCoordinates, setRouteCoordinates] = useState([]); 
   const [mapVisible, setMapVisible] = useState(false);
-
-  
   const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
+  const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
 
   const handleShowAllDirections = () => {
     setShowAllDirections((prevValue) => !prevValue);
   };
 
-
   const handleShowMap = () => {
     setMapVisible((prevValue) => !prevValue);
+    Keyboard.dismiss(); //recess mobile keyboard by auto
   };
 
   useEffect(() => {
@@ -145,11 +150,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGetDirections = async () => {
+  const fetchDirections = async () => {
     try {
       const currentLocation = encodeURIComponent(startingLocation); 
       const destinationLocation = encodeURIComponent(destination);
-  
+
+
       const response = await fetch(
         `${GOOGLE_DIRECTIONS_API}?origin=${currentLocation}&destination=${destinationLocation}&key=${GOOGLE_MAPS_API_KEY}`
       );
@@ -162,11 +168,9 @@ const App: React.FC = () => {
         const steps: Step[] = [];
         data.routes.forEach((route) => {
           route.legs.forEach((leg) => {
-            steps.push(...leg.steps);
-            
+            steps.push(...leg.steps); 
           });
         });
-
           //printing steps for debugging
           data.routes.forEach((route, routeIndex) => {
             route.legs.forEach((leg, legIndex) => {
@@ -177,15 +181,16 @@ const App: React.FC = () => {
             });
           });
 
-        setRouteSteps(steps);
-        setNavigationStarted(true); // start live updates
-      } else {
-        console.error('Error fetching directions:', response.status);
+          setRouteSteps(steps);
+          setNavigationStarted(true); // start live updates
+        } else {
+          console.error('Error fetching directions:', response.status);
+        }
+      } catch (error) {
+        console.error('Error fetching directions:', error);
       }
-    } catch (error) {
-      console.error('Error fetching directions:', error);
-    }
-  };
+    };
+  
 
   const updateRouteIfClose = () => {
     if (directions && currentLocation.latitude !== 0 && currentLocation.longitude !== 0) {
@@ -288,25 +293,29 @@ const App: React.FC = () => {
     'roundabout-right': require('./icons/png/light/direction_rotary_right.png'),
     'roundabout-continue': require('./icons/png/light/direction_roundabout_straight.png'),
 
-    
   });
-  return (
-    <View style={styles.container}>
-      <TextInput
+
+
+        //main styling & UI sections
+ return (
+  <View style={styles.container}>
+
+      <TextInput //input field
         placeholder="Current Location"
         style={styles.input}
         value={startingLocation}
         onChangeText={text => setStartingLocation(text)}
       />
-      <TextInput
+      <TextInput  //input field
         style={styles.input}
         placeholder="Destination" 
         value={destination}
         onChangeText={handleDestinationChange}
       />
+
       {potentialAddresses.length > 0 && (
         <ScrollView style={styles.addressesContainer}>
-          {potentialAddresses.map((address, index) => (
+          {potentialAddresses.map((address, index) => ( //address auto fill
             <TouchableOpacity
               key={index}
               onPress={() => handleAddressSelect(address.place_name)}
@@ -318,10 +327,10 @@ const App: React.FC = () => {
       )}
 
       <Text style={styles.header}>saggym0le navig8tor</Text>
-      <Button title="Get Directions" onPress={handleGetDirections} />
-
-      <TouchableOpacity onPress={testCompletion}>
-        <Text style={styles.testButton}>Test Completion</Text> 
+      <Button title="Get Directions" onPress={fetchDirections} />
+ 
+      <TouchableOpacity onPress={testCompletion}> 
+        <Text style={styles.testButton}>Test Completion</Text>  
       </TouchableOpacity>
 
       {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
@@ -346,6 +355,7 @@ const App: React.FC = () => {
                 ''
             )}`}
           </Text>
+          
         </View>
       )}
 
@@ -366,28 +376,40 @@ const App: React.FC = () => {
       )}
      
         
-    {/* Map component */}
-    {mapVisible && (
+     {!mapVisible && directions && (
         <MapView
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          initialRegion={{ ...currentLocation, latitudeDelta: 0.0922, longitudeDelta: 0.0421 }}
-        >
-          {/* Draw polyline using route coordinates */}
-          {routeCoordinates.length > 0 && (
-            <Polyline coordinates={routeCoordinates} strokeWidth={2} strokeColor="blue" />
-          )}
-
-          {/* Markers for start and end points */}
-          {routeCoordinates.length > 0 && (
-            <Marker coordinate={routeCoordinates[0]} title="Start" />
-          )}
-          {routeCoordinates.length > 0 && (
-            <Marker coordinate={routeCoordinates[routeCoordinates.length - 1]} title="End" />
-          )}
+        style={{ flex: 1 }}
+        initialRegion={{
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          latitudeDelta: 0.01, 
+          longitudeDelta: 0.01,
+        }}
+      >
+          {/* Render the route using MapViewDirections */}
+          <MapViewDirections
+            origin={currentLocation}
+            destination={destination}
+            apikey={GOOGLE_MAPS_API_KEY}
+            strokeWidth={3}
+            strokeColor="red"
+          />
+          {/* Render markers at each step along the route */}
+          {directions.routes[0].legs[0].steps.map((step, index) => (
+            <Marker
+              key={index}
+              coordinate={{
+                latitude: step.start_location.lat,
+                longitude: step.start_location.lng,
+              }}
+              title={`Step ${index + 1}`}
+            />
+          ))}
         </MapView>
       )}
-
+       
+        <View>
+      </View>
 
     {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
         <ScrollView style={styles.directionsContainer}>
@@ -487,7 +509,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
   },
   container: {
     flex: 1,
@@ -510,7 +532,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: 'white',
+    color: 'white', 
   },
   addressesContainer: {
     maxHeight: 150,
@@ -540,4 +562,3 @@ function readFileSync(arg0: string, arg1: string) {
 function setShowMap(arg0: boolean) {
   throw new Error('Function not implemented.');
 }
-
