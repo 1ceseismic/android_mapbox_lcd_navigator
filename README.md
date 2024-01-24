@@ -8,6 +8,6 @@ Initially using Mapbox API for iOS, but android has community-managed less suppo
 
 Building:
 Install x64 Android Studio, and set up a VDM for an emulator with x86_64 arch & preferably using GLES 2.0 GPU hardware <br>
-navigate to repo directory in cmd, and assuming node.js / nvm is correctly installed + env variables are set up: <br>
+navigate to repo directory in cmd, and assuming node.js / nvm is correctly installed + env variables are set up (follow [microsoft's tutorial](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/react-native-for-android)): <br>
 type `npm install` in order to install relevant dependencies from package.json <br>
 from same repo directory in terminal; type `npm start` to initialize a server (default port 8081) then "a" to run android simulator <br>
