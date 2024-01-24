@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard  } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform  } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import MapViewDirections from 'react-native-maps-directions';
+import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 
 const { width: screenWidth } = Dimensions.get('window');
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoiam9lcnUiLCJhIjoiY2xyOXN6aGswMDZuaTJpcnNkdTN5Y3dtNyJ9.9hNeXSbKdMl5CXqRbVRYwQ'
@@ -48,8 +49,41 @@ interface DirectionsResponse {
   routes: Route[];
 }
 
-const App: React.FC = () => {
+const App: React.FC = () => { 
 
+  const checkLocationPermission = async () => {
+    try {
+      const result = await check(
+        Platform.OS === 'ios'
+          ? PERMISSIONS.IOS.LOCATION_ALWAYS
+          : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
+      );
+      
+      if (result === RESULTS.GRANTED) {
+        // Permission is already granted
+        setLocationPermissionGranted(true);
+        fetchUserLocation();
+      } else {
+        // Permission is not granted, request it
+        const permissionResult = await request(
+          Platform.OS === 'ios'
+            ? PERMISSIONS.IOS.LOCATION_ALWAYS
+            : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
+        );
+        if (permissionResult === RESULTS.GRANTED) {
+          // Permission granted after request
+          setLocationPermissionGranted(true);
+          fetchUserLocation();
+        } else {
+          // Permission denied, handle accordingly (e.g., show an error message)
+          console.warn('Location permission denied.');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking location permission:', error);
+    }
+  };
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
 
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
@@ -79,7 +113,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchUserLocation();
+    checkLocationPermission();
   }, []);
 
   useEffect(() => {
@@ -367,11 +401,11 @@ const App: React.FC = () => {
     
       {!mapVisible ? (
         <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.showMapButton}>Show Map</Text>
+          <Text style={styles.showMapButton}>Hide Map</Text>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.hideMapButton}>Hide Map</Text>
+          <Text style={styles.hideMapButton}>Show Map</Text>
         </TouchableOpacity>
       )}
      
@@ -395,7 +429,7 @@ const App: React.FC = () => {
             strokeColor="red"
           />
           {/* Render markers at each step along the route */}
-          {directions.routes[0].legs[0].steps.map((step, index) => (
+          {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
             <Marker
               key={index}
               coordinate={{
@@ -498,14 +532,14 @@ const styles = StyleSheet.create({
     color: 'white',
     marginTop: 10,
     padding: 10,
-    backgroundColor: 'green',
+    backgroundColor: 'red',
     textAlign: 'center',
   },
   hideMapButton: {
     color: 'white',
     marginTop: 10,
     padding: 10,
-    backgroundColor: 'red',
+    backgroundColor: 'green',
     textAlign: 'center',
   },
   map: {
