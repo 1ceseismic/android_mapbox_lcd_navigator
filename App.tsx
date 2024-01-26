@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform  } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform, FlatList  } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import MapViewDirections from 'react-native-maps-directions';
 import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
@@ -11,8 +11,9 @@ const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/'
 const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
 
 import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview } from 'react-native-maps';
-import axios from 'axios';
 import {enableLatestRenderer} from 'react-native-maps';
+import {BleManager, BleError, Device } from 'react-native-ble-plx';
+import BluetoothStateManager from 'react-native-bluetooth-state-manager';
 
 //import MapboxDirectionsFactory from '@mapbox/mapbox-sdk/services/directions';
 
@@ -80,9 +81,11 @@ const App: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error checking location permission:', error);
+      console.error('Error checking Bluetooth permissions:', error);
     }
   };
+
+
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
 
   const [destination, setDestination] = useState('');
@@ -103,6 +106,13 @@ const App: React.FC = () => {
   const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
 
+  //for bte module
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [device, setDevice] = useState<Device | null>(null); 
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [manager, setManager] = useState<BleManager | null>(null);
+
+
   const handleShowAllDirections = () => {
     setShowAllDirections((prevValue) => !prevValue);
   };
@@ -114,19 +124,89 @@ const App: React.FC = () => {
 
   useEffect(() => {
     checkLocationPermission();
+    checkBluetoothPermissions();
+
   }, []);
 
+  const checkBluetoothPermissions = async () => {
+    // try {
+    //   const result = await BluetoothStateManager.requestToEnable();
+    //   if (result) {
+    //     scanDevices();
+    //   } else {
+    //     console.warn('Bluetooth is not enabled.');
+    //   }
+    // } catch (error) {
+    //   console.error('Error checking Bluetooth permissions:', error);
+    // }
+  };
+
+
   useEffect(() => {
-    // Start monitoring the device's location for live navigation
+    const bleManager = new BleManager();
+    setManager(bleManager);
+
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
         fetchUserLocation();
-        updateRouteIfClose();
+        updateRouteifClose();
       }, 80000);  // check user location + claculation delay
       return () => clearInterval(locationUpdateInterval);
     }
   }, [navigationStarted, currentStepIndex]);
 
+
+  
+  const scanDevices = async () => {
+    try {
+      const manager = new BleManager();
+
+      const subscription = manager.onStateChange((state) => {
+        if (state === 'PoweredOn') {
+          manager.startDeviceScan(null, null, (error, scannedDevice) => {
+            if (error) {
+              console.error('Scan error:', error);
+              return;
+            }
+
+            if (scannedDevice) {
+              setDevices((prevDevices) => {
+                if (!prevDevices.some((dev) => dev.id === scannedDevice.id)) {
+                  return [...prevDevices, scannedDevice];
+                }
+                return prevDevices;
+              });
+            }
+          });
+            //bte scanning timeout limit
+          setTimeout(() => {
+            manager.stopDeviceScan();
+          }, 10000);
+        }
+      }, true);
+
+      return () => {
+        subscription.remove();
+        manager.destroy();
+      };
+    } catch (error) {
+      console.error('Error scanning devices or Bluetooth not enabled:', error);
+    }
+  };
+
+ 
+  const connectToDevice = async (manager: BleManager | null, selectedDevice: Device | null) => {
+    try {
+      if (manager && selectedDevice) {
+        const connectedDevice = await selectedDevice.connect();
+        setDevice(connectedDevice);
+      } else {
+        console.warn('No manager or device available for connection.');
+      }
+    } catch (error) {
+      console.error('Error connecting to device:', error);
+    }
+  };
 
   const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
@@ -203,7 +283,7 @@ const App: React.FC = () => {
         data.routes.forEach((route) => {
           route.legs.forEach((leg) => {
             steps.push(...leg.steps); 
-          });
+          })
         });
           //printing steps for debugging
           data.routes.forEach((route, routeIndex) => {
@@ -211,6 +291,14 @@ const App: React.FC = () => {
               leg.steps.forEach((step, stepIndex) => {
                 console.log('Step Object:', step);
                 console.log('Maneuver Type:', step.maneuver);
+
+                sendNavigationalInstructions({
+                  maneuver: step.maneuver || '',
+                  roundaboutExit: '', // You may need to extract this information from step.instructions
+                  arrowType: '', // You may need to extract this information from step.instructions
+                  normalInstruction: step.instructions || '',
+                });
+              
               });
             });
           });
@@ -224,41 +312,62 @@ const App: React.FC = () => {
         console.error('Error fetching directions:', error);
       }
     };
+
+    const sendNavigationalInstructions = (instructions: {}) => {
+      if (device && manager) {
+        try {
+          // Convert the instructions to a string or another suitable format
+          const instructionsString = JSON.stringify(instructions);
+    
+          // Send the instructions to the Arduino via Bluetooth
+          device.writeCharacteristicWithResponseForService(
+            'YourServiceUUID',
+            'YourCharacteristicUUID',
+            instructionsString
+          );
+    
+          console.log('Navigational instructions sent successfully:', instructionsString);
+        } catch (error) {
+          console.error('Error sending navigational instructions:', error);
+        }
+      } else {
+        console.warn('Device or manager not available for sending instructions.');
+      }
+    };
   
 
-  const updateRouteIfClose = () => {
-    if (directions && currentLocation.latitude !== 0 && currentLocation.longitude !== 0) {
-      const nextStep = routeSteps[currentStepIndex];
+    const updateRouteifClose = () => {
+      if (navigationStarted && routeSteps.length > 0) {
+        const nextStep = routeSteps[currentStepIndex+1];
 
-      const calculatedDistanceToNextStep = calculateDistance(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        nextStep.start_location.lat,
-        nextStep.start_location.lng
-      );
+        const calculatedDistanceToNextStep = calculateDistance(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          nextStep.start_location.lat,
+          nextStep.start_location.lng
+        );    
 
-      console.log('Next Step Coordinates:', nextStep.start_location);
-
-      if (calculatedDistanceToNextStep < 20) { // to activate the next step en route
-        setCompletedSteps([...completedSteps, currentStepIndex]);
-        setCurrentStepIndex((prevIndex) => prevIndex + 1);
-        setDisplayedStepIndex((prevIndex) => prevIndex + 1);
-
-        console.log('Completed Steps:', completedSteps)
-
-        if (currentStepIndex + 1 === routeSteps.length) { //nav complete stop live updates
-          setNavigationStarted(false);
+        if (calculatedDistanceToNextStep < 20) {
+          if (!completedSteps.includes(currentStepIndex)) {
+            sendNavigationalInstructions(currentStepIndex);
+            setCompletedSteps([...completedSteps, currentStepIndex]);
+            setDisplayedStepIndex((prevIndex) => prevIndex + 1);
+            console.log('Completed Steps:', completedSteps);
+    
+            if (currentStepIndex + 1 === routeSteps.length) {
+              setNavigationStarted(false);
+            }
+          }
+    
+          if (currentStepIndex + 1 < routeSteps.length) {
+            setCurrentStepIndex((prevIndex) => prevIndex + 1);
+          }
         }
+    
+        setDistanceToNextStep(calculatedDistanceToNextStep);
       }
+    };
 
-      setDistanceToNextStep(calculatedDistanceToNextStep);
-    }
-  };
-
-  const testCompletion = () => {
-    setCompletedSteps([0]);
-    setCurrentStepIndex(1);
-  };
 
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // radius of the earth in km
@@ -329,10 +438,10 @@ const App: React.FC = () => {
 
   });
 
-
         //main styling & UI sections
  return (
   <View style={styles.container}>
+   <Text style={styles.header}>Halo Vision</Text>
 
       <TextInput //input field
         placeholder="Current Location"
@@ -360,12 +469,28 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-      <Text style={styles.header}>saggym0le navig8tor</Text>
       <Button title="Get Directions" onPress={fetchDirections} />
  
-      <TouchableOpacity onPress={testCompletion}> 
-        <Text style={styles.testButton}>Test Completion</Text>  
-      </TouchableOpacity>
+      <Button title="Send navigation to arduino" onPress={sendNavigationalInstructions} />
+
+    <View>
+      <Text>Bluetooth Device List</Text>
+      <FlatList
+        data={devices}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => setSelectedDevice(item)}>
+            <Text>{item.name || 'Unnamed Device'}</Text>
+          </TouchableOpacity>
+        )}
+      />
+      <Button
+       title="Connect to Selected Device"
+       onPress={() => connectToDevice(manager, selectedDevice)}
+      />    
+      </View>
+
+
 
       {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
         <View style={styles.currentStepContainer}>
@@ -593,6 +718,5 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-function setShowMap(arg0: boolean) {
-  throw new Error('Function not implemented.');
-}
+
+
