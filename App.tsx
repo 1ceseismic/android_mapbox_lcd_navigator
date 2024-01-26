@@ -85,7 +85,6 @@ const App: React.FC = () => {
     }
   };
 
-
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
 
   const [destination, setDestination] = useState('');
@@ -133,6 +132,7 @@ const App: React.FC = () => {
     //   const result = await BluetoothStateManager.requestToEnable();
     //   if (result) {
     //     scanDevices();
+    // console.log('bt enabled, scanning for devices)
     //   } else {
     //     console.warn('Bluetooth is not enabled.');
     //   }
@@ -181,7 +181,7 @@ const App: React.FC = () => {
             //bte scanning timeout limit
           setTimeout(() => {
             manager.stopDeviceScan();
-          }, 10000);
+          }, 30000);
         }
       }, true);
 
@@ -198,6 +198,8 @@ const App: React.FC = () => {
   const connectToDevice = async (manager: BleManager | null, selectedDevice: Device | null) => {
     try {
       if (manager && selectedDevice) {
+        console.log('Connecting to device:', selectedDevice.name || selectedDevice.id)
+
         const connectedDevice = await selectedDevice.connect();
         setDevice(connectedDevice);
       } else {
@@ -298,7 +300,26 @@ const App: React.FC = () => {
                   arrowType: '', // You may need to extract this information from step.instructions
                   normalInstruction: step.instructions || '',
                 });
-              
+                const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
+                
+              if (maneuverString && maneuverString.includes('roundabout')) {
+                console.log('Roundabout included')
+                const instructionString = step.html_instructions.toString()
+                const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
+                const exitNumber = match ? match[1] : null;
+                if (exitNumber !== null) {
+                  console.log('Exit Number:', exitNumber);
+                }
+                else{
+                  console.log('No exit number included')
+                }
+
+
+              }
+              else{
+                console.log('No roundabout included')
+              }
+
               });
             });
           });
@@ -338,7 +359,7 @@ const App: React.FC = () => {
 
     const updateRouteifClose = () => {
       if (navigationStarted && routeSteps.length > 0) {
-        const nextStep = routeSteps[currentStepIndex+1];
+        const nextStep = routeSteps[currentStepIndex];
 
         const calculatedDistanceToNextStep = calculateDistance(
           currentLocation.latitude,
@@ -347,7 +368,7 @@ const App: React.FC = () => {
           nextStep.start_location.lng
         );    
 
-        if (calculatedDistanceToNextStep < 20) {
+        if (calculatedDistanceToNextStep < 60) { //metres threshold for update directions
           if (!completedSteps.includes(currentStepIndex)) {
             sendNavigationalInstructions(currentStepIndex);
             setCompletedSteps([...completedSteps, currentStepIndex]);
@@ -355,7 +376,7 @@ const App: React.FC = () => {
             console.log('Completed Steps:', completedSteps);
     
             if (currentStepIndex + 1 === routeSteps.length) {
-              setNavigationStarted(false);
+              setNavigationStarted(false); //end of trip
             }
           }
     
@@ -398,7 +419,6 @@ const App: React.FC = () => {
     setDestination(selectedAddress);
     setPotentialAddresses([]); // Clear address suggestions
   };
-
   const removeHtmlTags = (text: string) => {
     return text.replace(/<\/?[^>]+(>|$)/g, ''); // Regex to remove HTML tags
   };
@@ -435,7 +455,6 @@ const App: React.FC = () => {
     'roundabout-left': require('./icons/png/light/direction_rotary_left.png'),
     'roundabout-right': require('./icons/png/light/direction_rotary_right.png'),
     'roundabout-continue': require('./icons/png/light/direction_roundabout_straight.png'),
-
   });
 
         //main styling & UI sections
@@ -443,13 +462,13 @@ const App: React.FC = () => {
   <View style={styles.container}>
    <Text style={styles.header}>Halo Vision</Text>
 
-      <TextInput //input field
+      <TextInput //from field
         placeholder="Current Location"
         style={styles.input}
         value={startingLocation}
         onChangeText={text => setStartingLocation(text)}
       />
-      <TextInput  //input field
+      <TextInput  //destination field
         style={styles.input}
         placeholder="Destination" 
         value={destination}
@@ -469,12 +488,25 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-      <Button title="Get Directions" onPress={fetchDirections} />
- 
-      <Button title="Send navigation to arduino" onPress={sendNavigationalInstructions} />
+      <TouchableOpacity onPress={() => connectToDevice(manager, selectedDevice)}>
+        <Text style={{ color: 'white',
+          marginTop: 3,
+          padding: 4,
+          backgroundColor: 'olivedrab',
+          textAlign: 'center',}}> {'Connect to selected device'}
+        </Text>
+      </TouchableOpacity>
 
+      <TouchableOpacity onPress={fetchDirections}>
+        <Text style={{ color: 'white',
+          marginTop: 3,
+          padding: 4,
+          backgroundColor: 'cornflowerblue',
+          textAlign: 'center',}}> {'Get directions'}
+        </Text>
+      </TouchableOpacity>
+ 
     <View>
-      <Text>Bluetooth Device List</Text>
       <FlatList
         data={devices}
         keyExtractor={(item) => item.id}
@@ -483,13 +515,8 @@ const App: React.FC = () => {
             <Text>{item.name || 'Unnamed Device'}</Text>
           </TouchableOpacity>
         )}
-      />
-      <Button
-       title="Connect to Selected Device"
-       onPress={() => connectToDevice(manager, selectedDevice)}
-      />    
+      />   
       </View>
-
 
 
       {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
@@ -526,11 +553,11 @@ const App: React.FC = () => {
     
       {!mapVisible ? (
         <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.showMapButton}>Hide Map</Text>
+          <Text style={styles.hideMapButton}>Hide Map</Text>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.hideMapButton}>Show Map</Text>
+          <Text style={styles.showMapButton}>Show Map</Text>
         </TouchableOpacity>
       )}
      
@@ -648,22 +675,22 @@ const styles = StyleSheet.create({
   },
   showAllDirectionsButton: {
     color: 'white',
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: 'blue',
-    textAlign: 'center',
-  },
-  showMapButton: {
-    color: 'white',
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: 'red',
+    marginTop: 5,
+    padding: 7,
+    backgroundColor: 'rebeccapurple',
     textAlign: 'center',
   },
   hideMapButton: {
     color: 'white',
-    marginTop: 10,
-    padding: 10,
+    marginTop: 5,
+    padding: 7,
+    backgroundColor: 'darkred',
+    textAlign: 'center',
+  },
+  showMapButton: {
+    color: 'white',
+    marginTop: 5,
+    padding: 7,
     backgroundColor: 'green',
     textAlign: 'center',
   },
@@ -678,10 +705,10 @@ const styles = StyleSheet.create({
   },
   input: {
     color: 'white',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#000',
-    padding: 10,
-    marginBottom: 10,
+    padding: 6,
+    marginBottom: 3,
   },
   directionsContainer: {
     flex: 1,
@@ -718,5 +745,4 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
 
