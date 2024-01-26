@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform, FlatList  } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform, FlatList, DevSettings  } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import MapViewDirections from 'react-native-maps-directions';
 import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
@@ -313,8 +313,6 @@ const App: React.FC = () => {
                 else{
                   console.log('No exit number included')
                 }
-
-
               }
               else{
                 console.log('No roundabout included')
@@ -423,14 +421,25 @@ const App: React.FC = () => {
     return text.replace(/<\/?[^>]+(>|$)/g, ''); // Regex to remove HTML tags
   };
 
-  const formatDistance = (distance: string, unit: string) => {
-    const distanceValue = parseFloat(distance);
-    if (distanceValue < 1000) {
-      return `${(distanceValue)*1000}m`;
-    } else {
-      const distanceInKm = distanceValue / 1000;
-      return `${distanceInKm.toFixed(2)} km`;
+  const formatDistance = (distanceValue: number, unit: string) => {
+    let formattedDistance = '';
+    const roundedDistance = Math.round(distanceValue);
+
+    if (distanceValue > 1000) {
+      const kilometres = (roundedDistance / 1000).toFixed(1);
+      formattedDistance = `${kilometres} km`;
+
+    } else if (distanceValue > 100){ 
+      const roundedHundreds = Math.floor(roundedDistance / 100) * 100
+        formattedDistance = `${roundedHundreds} m`;
+
     }
+    else if (distanceValue > 10) {
+      const roundedTens = Math.floor(roundedDistance / 10) * 10;
+      formattedDistance = `${roundedTens} m`;
+    }
+    return formattedDistance;
+
   };
 
   const [instructionIcons, setInstructionIcons] = useState<{ [key: string]: any }>({
@@ -531,7 +540,7 @@ const App: React.FC = () => {
             {`${displayedStepIndex + 1}. ${
               displayedStepIndex > 0
                 ? `In ${formatDistance(
-                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.text,
+                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.value,
                     directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.unit
                   )}, `
                 : ''
@@ -617,7 +626,7 @@ const App: React.FC = () => {
                         {`${stepIndex + 1}. ${
                           stepIndex > 0
                             ? `In ${formatDistance(
-                                leg.steps[stepIndex - 1].distance.text,
+                                leg.steps[stepIndex - 1].distance.value,
                                 leg.steps[stepIndex - 1].distance.unit
                               )}, `
                             : ''
