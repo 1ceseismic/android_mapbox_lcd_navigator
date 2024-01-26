@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform, FlatList, DevSettings  } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Button, TouchableOpacity, Image, Dimensions, Keyboard, PermissionsAndroid, Platform, FlatList} from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import MapViewDirections from 'react-native-maps-directions';
 import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
@@ -15,10 +15,7 @@ import {enableLatestRenderer} from 'react-native-maps';
 import {BleManager, BleError, Device } from 'react-native-ble-plx';
 import BluetoothStateManager from 'react-native-bluetooth-state-manager';
 
-//import MapboxDirectionsFactory from '@mapbox/mapbox-sdk/services/directions';
-
-// const Googletokenpath = '/tokens/gg_priv.txt';
-//  const Mapboxtokenpath = '/tokens/mb_public.txt';
+const CHARACTERISTIC_UUID = '19B10001-E8F2-537E-4F6C-D104768A1214'; 
 
 enableLatestRenderer();
 
@@ -27,7 +24,6 @@ const pathToLight = './icons/png/light/';
 interface AddressFeature {
   place_name: string;
 }
-
 interface Step {
   maneuver: any;
   distance: any;
@@ -38,6 +34,7 @@ interface Step {
 }
 
 interface Leg {
+  distance: any;
   start_location: any;
   steps: Step[];
 }
@@ -61,11 +58,12 @@ const App: React.FC = () => {
       );
       
       if (result === RESULTS.GRANTED) {
-        // Permission is already granted
+        // permission is already granted
         setLocationPermissionGranted(true);
         fetchUserLocation();
+
       } else {
-        // Permission is not granted, request it
+        // permission isnt granted so request it
         const permissionResult = await request(
           Platform.OS === 'ios'
             ? PERMISSIONS.IOS.LOCATION_ALWAYS
@@ -75,8 +73,7 @@ const App: React.FC = () => {
           // Permission granted after request
           setLocationPermissionGranted(true);
           fetchUserLocation();
-        } else {
-          // Permission denied, handle accordingly (e.g., show an error message)
+        } else { 
           console.warn('Location permission denied.');
         }
       }
@@ -86,24 +83,36 @@ const App: React.FC = () => {
   };
 
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
-
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
-  const [directions, setDirections] = useState<DirectionsResponse | null>(null);
+
+   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [displayedStepIndex, setDisplayedStepIndex] = useState(0);
+  const [FinalStepIndex, setFinalStepIndex] = useState<number | null>(null);
+
   const [routeSteps, setRouteSteps] = useState<Step[]>([]);
   const [distanceToNextStep, setDistanceToNextStep] = useState<number | null>(null);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-  const [displayedStepIndex, setDisplayedStepIndex] = useState(0);
   const [showAllDirections, setShowAllDirections] = useState(false);
+  const [currentManeuver, setCurrentManeuver] = useState<string>('');
 
   const [userLocation, setUserLocation] = useState(null);
   const [mapVisible, setMapVisible] = useState(false);
   const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [totalTravelDistance, setTotalTravelDistance] = useState<number | null>(null);
+  const [exitNumber, setExitNumber] = useState<number | null>(null);
+  
+  const [DestinationCoordinates, setDestinationCoordinates] = useState<{ latitude: number; longitude: number }>({
+    latitude: 0,
+    longitude: 0,
+  }); 
+
+  let outputString = ''; 
 
   //for bte module
   const [devices, setDevices] = useState<Device[]>([]);
@@ -121,24 +130,31 @@ const App: React.FC = () => {
     Keyboard.dismiss(); //recess mobile keyboard by auto
   };
 
+
   useEffect(() => {
     checkLocationPermission();
     checkBluetoothPermissions();
-
   }, []);
 
   const checkBluetoothPermissions = async () => {
-    // try {
+   
+    try {
+      BluetoothStateManager.enable().then(() => {
+        console.log('Bluetooth is turned on');
+          scanDevices();
+        
+    });
+      
     //   const result = await BluetoothStateManager.requestToEnable();
     //   if (result) {
     //     scanDevices();
-    // console.log('bt enabled, scanning for devices)
+    //     console.log('bt enabled, scanning for devices')
     //   } else {
     //     console.warn('Bluetooth is not enabled.');
     //   }
-    // } catch (error) {
-    //   console.error('Error checking Bluetooth permissions:', error);
-    // }
+    } catch (error) {
+      console.error('Error checking Bluetooth permissions:', error);
+    }
   };
 
 
@@ -148,14 +164,12 @@ const App: React.FC = () => {
 
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
-        fetchUserLocation();
         updateRouteifClose();
-      }, 80000);  // check user location + claculation delay
+        fetchUserLocation();
+      }, 3000);  // check user location + claculation delay
       return () => clearInterval(locationUpdateInterval);
     }
   }, [navigationStarted, currentStepIndex]);
-
-
   
   const scanDevices = async () => {
     try {
@@ -200,6 +214,8 @@ const App: React.FC = () => {
       if (manager && selectedDevice) {
         console.log('Connecting to device:', selectedDevice.name || selectedDevice.id)
 
+        // const device = manager.connectToDevice(selectedDevice.id)
+
         const connectedDevice = await selectedDevice.connect();
         setDevice(connectedDevice);
       } else {
@@ -215,13 +231,20 @@ const App: React.FC = () => {
       position => {
         const { latitude, longitude } = position.coords;
         setCurrentLocation({ latitude, longitude });
-        reverseGeocode(latitude, longitude);
-        console.log('User location: ' + latitude + ', ' + longitude)
+
+        if(navigationStarted){ //updating live
+          console.log('Navigation started, explicitly updating user location')
+        }
+        else { //starting new route
+          console.log('new route, reverse geocoding...')
+          reverseGeocode(latitude, longitude);
+        }
+
       },
       error => {
         console.error('Error getting user location:', error);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
     );
   };
 
@@ -244,10 +267,46 @@ const App: React.FC = () => {
       console.error('Error fetching user location address:', error);
     }
   };
+  
+  const forwardGeocode = async (placeName: string) => {
+    try {
+
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(placeName)}&key=${GOOGLE_MAPS_API_KEY}`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+    
+          if (data.results.length > 0) {
+            console.log('placename', placeName);
+           const location = data.results[0].geometry.location;
+           const location_type = data.results[0].geometry.location_type;
+            console.log('location type', location_type)
+
+            if (location_type === 'ROOFTOP' || location_type === 'RANGE_INTERPOLATED' || location_type === 'APPROXIMATE') {
+              setDestinationCoordinates({
+                latitude: location.lat,
+                longitude: location.lng,
+              });
+  
+            }
+           
+          } else {
+            console.error('Location not found');
+          }
+        } else {
+          console.error('Error with forward geocode:', response.status);
+        }
+      } catch (error) {
+        console.error('Error with forward geocode:', error);
+      }
+    };
 
   const fetchPotentialAddresses = async () => {
     try {
       if (destination.length > 0) {
+
         const response = await fetch(
           `${API_BASE_URL}${encodeURIComponent(destination)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
         );
@@ -256,22 +315,25 @@ const App: React.FC = () => {
           const data = await response.json();
           setPotentialAddresses(data.features || []);
         } else {
-          console.error('Error fetching potential addresses:', response.status);
+          //console.error('Error fetching potential addresses:', response.status);
         }
       } else {
         setPotentialAddresses([]);
       }
     } catch (error) {
-      console.error('Error fetching potential addresses:', error);
+      //console.error('Error fetching potential addresses:', error);
     }
   };
 
+ 
+
   const fetchDirections = async () => {
+    console.log('Destination Coordinates:', DestinationCoordinates);
+
     try {
-      const currentLocation = encodeURIComponent(startingLocation); 
+      const currentLocation = encodeURIComponent(startingLocation);
       const destinationLocation = encodeURIComponent(destination);
-
-
+  
       const response = await fetch(
         `${GOOGLE_DIRECTIONS_API}?origin=${currentLocation}&destination=${destinationLocation}&key=${GOOGLE_MAPS_API_KEY}`
       );
@@ -279,14 +341,59 @@ const App: React.FC = () => {
       if (response.ok) {
         const data: DirectionsResponse = await response.json();
         setDirections(data);
-
+  
+        const totalDistance = data.routes[0].legs.reduce((acc, leg) => acc + leg.distance.value, 0);
+        setTotalTravelDistance(totalDistance);
+  
         // extract all steps from the route
         const steps: Step[] = [];
-        data.routes.forEach((route) => {
-          route.legs.forEach((leg) => {
-            steps.push(...leg.steps); 
-          })
+        data.routes.forEach((route, routeIndex) => {
+          route.legs.forEach((leg, legIndex) => {
+            leg.steps.forEach((step, stepIndex) => {
+              steps.push(step);
+
+
+              sendNavigationalInstructions(outputString);
+            });
+          });
         });
+
+
+        let secondToLastStep: Step | undefined = undefined;
+        if (FinalStepIndex !== null && FinalStepIndex > 0 && FinalStepIndex < steps.length) {
+          const secondToLastStepIndex = FinalStepIndex - 1;
+          secondToLastStep = steps[secondToLastStepIndex];
+          // Use secondToLastStep.start_location or end_location based on your requirement
+          console.log('Second-to-last step coordinates:', secondToLastStep.start_location);
+        }
+
+        const destinationInstruction: Step = {
+      maneuver: 'destination',
+      distance: { text: '0 meters', value: 0 },
+      html_instructions: `You have reached your destination: ${destination}`,
+      instructions: `You have reached your destination: ${destination}`,
+      start_location: secondToLastStep
+        ? secondToLastStep.start_location
+        : { lat: 0, lng: 0 }, 
+      end_location: {
+        lat: DestinationCoordinates.latitude,
+        lng: DestinationCoordinates.longitude,
+      },
+    };
+
+      steps.push(destinationInstruction);
+
+      setRouteSteps(steps);
+      setNavigationStarted(true); // start live updates
+
+      if (FinalStepIndex !== null && FinalStepIndex > 0) {
+        // Extract coordinates of the second-to-last step
+        const secondToLastStepIndex = FinalStepIndex - 1;
+        const secondToLastStep = steps[secondToLastStepIndex];
+        // Use secondToLastStep.start_location or end_location based on your requirement
+        console.log('Second-to-last step coordinates:', secondToLastStep.start_location);
+      }
+
           //printing steps for debugging
           data.routes.forEach((route, routeIndex) => {
             route.legs.forEach((leg, legIndex) => {
@@ -294,36 +401,31 @@ const App: React.FC = () => {
                 console.log('Step Object:', step);
                 console.log('Maneuver Type:', step.maneuver);
 
-                sendNavigationalInstructions({
-                  maneuver: step.maneuver || '',
-                  roundaboutExit: '', // You may need to extract this information from step.instructions
-                  arrowType: '', // You may need to extract this information from step.instructions
-                  normalInstruction: step.instructions || '',
-                });
+              
                 const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
                 
               if (maneuverString && maneuverString.includes('roundabout')) {
-                console.log('Roundabout included')
+                console.log('Roundabout present')
+
                 const instructionString = step.html_instructions.toString()
                 const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
-                const exitNumber = match ? match[1] : null;
+
+                const newExitNumber = match ? parseInt(match[1]) : null;
+                setExitNumber(newExitNumber);
+
                 if (exitNumber !== null) {
-                  console.log('Exit Number:', exitNumber);
-                }
-                else{
+                  console.log('Exit Number:', newExitNumber);
+                } else{
                   console.log('No exit number included')
-                }
-              }
-              else{
+                }} else{
                 console.log('No roundabout included')
               }
-
               });
             });
           });
 
-          setRouteSteps(steps);
-          setNavigationStarted(true); // start live updates
+          // setRouteSteps(steps);
+          // setNavigationStarted(true); // start live updates
         } else {
           console.error('Error fetching directions:', response.status);
         }
@@ -332,20 +434,31 @@ const App: React.FC = () => {
       }
     };
 
-    const sendNavigationalInstructions = (instructions: {}) => {
+    const sendNavigationalInstructions = async (outputString: string) => {
+
       if (device && manager) {
         try {
-          // Convert the instructions to a string or another suitable format
-          const instructionsString = JSON.stringify(instructions);
+          // Step 1: Connect to the Bluetooth device
+          await device.connect();
     
-          // Send the instructions to the Arduino via Bluetooth
-          device.writeCharacteristicWithResponseForService(
-            'YourServiceUUID',
-            'YourCharacteristicUUID',
-            instructionsString
+          // Step 2: Discover the characteristics of the Bluetooth service
+          const services = await device.discoverAllServicesAndCharacteristics();
+          const characteristic = (services as any).characteristics.find(
+            (c: { uuid: string; }) => c.uuid === 'YOUR_CHARACTERISTIC_UUID' // Replace with your actual characteristic UUID
           );
     
-          console.log('Navigational instructions sent successfully:', instructionsString);
+          if (characteristic) {
+            // Step 3: Write data to the characteristic to send instructions
+            await characteristic.writeWithResponse(outputString);
+    
+            console.log('Navigational instructions sent successfully:', outputString);
+          } else {
+            console.error('Characteristic not found.');
+          }
+    
+          // Disconnect after sending data (if needed)
+          await device.cancelConnection();
+    
         } catch (error) {
           console.error('Error sending navigational instructions:', error);
         }
@@ -366,14 +479,17 @@ const App: React.FC = () => {
           nextStep.start_location.lng
         );    
 
-        if (calculatedDistanceToNextStep < 60) { //metres threshold for update directions
+        if (calculatedDistanceToNextStep <= 10) { //metres threshold for update directions
           if (!completedSteps.includes(currentStepIndex)) {
-            sendNavigationalInstructions(currentStepIndex);
+
+            sendNavigationalInstructions(outputString);
+
             setCompletedSteps([...completedSteps, currentStepIndex]);
             setDisplayedStepIndex((prevIndex) => prevIndex + 1);
             console.log('Completed Steps:', completedSteps);
     
             if (currentStepIndex + 1 === routeSteps.length) {
+              setFinalStepIndex(currentStepIndex + 1);
               setNavigationStarted(false); //end of trip
             }
           }
@@ -382,13 +498,12 @@ const App: React.FC = () => {
             setCurrentStepIndex((prevIndex) => prevIndex + 1);
           }
         }
-    
-        setDistanceToNextStep(calculatedDistanceToNextStep);
+        if(calculatedDistanceToNextStep !== null){ 
+           setDistanceToNextStep(Math.round(calculatedDistanceToNextStep / 10) * 10);}
       }
     };
 
-
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => { //calculating distance between two coordinates / waypoints
     const R = 6371; // radius of the earth in km
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
@@ -398,14 +513,17 @@ const App: React.FC = () => {
       Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // Distance in km
+    const calculatedDistance = R * c; // Distance in km
 
-    return distance * 1000; // Convert to meters
+    setDistanceToNextStep(calculatedDistance); // Update the global state variable
+    return calculatedDistance * 1000; // Convert to meters
   };
 
   const deg2rad = (deg: number) => {
     return deg * (Math.PI / 180);
   };
+
+
 
   const handleDestinationChange = (text: string) => {
     setDestination(text);
@@ -438,6 +556,9 @@ const App: React.FC = () => {
       const roundedTens = Math.floor(roundedDistance / 10) * 10;
       formattedDistance = `${roundedTens} m`;
     }
+    else {
+      formattedDistance = distanceValue + ' m';
+    }
     return formattedDistance;
 
   };
@@ -466,10 +587,12 @@ const App: React.FC = () => {
     'roundabout-continue': require('./icons/png/light/direction_roundabout_straight.png'),
   });
 
-        //main styling & UI sections
+
  return (
   <View style={styles.container}>
-   <Text style={styles.header}>Halo Vision</Text>
+    <View style={styles.innerContainer}>
+
+   <Text style={styles.header}>Halo Vision            Next Step in: {`${distanceToNextStep} m`}</Text>
 
       <TextInput //from field
         placeholder="Current Location"
@@ -483,14 +606,15 @@ const App: React.FC = () => {
         value={destination}
         onChangeText={handleDestinationChange}
       />
-
       {potentialAddresses.length > 0 && (
         <ScrollView style={styles.addressesContainer}>
           {potentialAddresses.map((address, index) => ( //address auto fill
             <TouchableOpacity
               key={index}
-              onPress={() => handleAddressSelect(address.place_name)}
-            >
+              onPress={() => { 
+                forwardGeocode(address.place_name); 
+                handleAddressSelect(address.place_name);
+              }}>
               <Text style={styles.addressText}>{address.place_name || ''}</Text>
             </TouchableOpacity>
           ))}
@@ -527,7 +651,6 @@ const App: React.FC = () => {
       />   
       </View>
 
-
       {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
         <View style={styles.currentStepContainer}>
           <View style={styles.directionsIcon}>
@@ -549,29 +672,42 @@ const App: React.FC = () => {
                 directions.routes[0].legs[0].steps[displayedStepIndex].instructions ||
                 ''
             )}`}
-          </Text>
-          
+          </Text>      
         </View>
       )}
 
-  <TouchableOpacity onPress={handleShowAllDirections}>
-        <Text style={styles.showAllDirectionsButton}>
-          {showAllDirections ? 'Hide All Directions' : 'Show All Directions'}
-        </Text>
-      </TouchableOpacity>
-    
-      {!mapVisible ? (
-        <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.hideMapButton}>Hide Map</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity onPress={handleShowMap}>
-          <Text style={styles.showMapButton}>Show Map</Text>
-        </TouchableOpacity>
-      )}
+          <TouchableOpacity onPress={handleShowAllDirections}>
+                <Text style={styles.showAllDirectionsButton}>
+                  {showAllDirections ? 'Hide All Directions' : 'Show All Directions'}
+                </Text>
+           </TouchableOpacity>
+            
+          {!mapVisible ? (
+            <TouchableOpacity onPress={handleShowMap}>
+              <Text style={styles.hideMapButton}>
+                       Hide Map
+                {totalTravelDistance !== null && (
+                  <Text style={styles.totalDistanceText}>
+                    {'\n'}Total distance: {formatDistance(totalTravelDistance, 'm')}
+                  </Text>
+                )}
+          </Text>
+            </TouchableOpacity>) : (
+                <TouchableOpacity onPress={handleShowMap}>
+              <Text style={styles.showMapButton}>
+                Show Map
+                {totalTravelDistance !== null && (
+                  <Text style={styles.totalDistanceText}>
+                    {'\n'}Total distance: {formatDistance(totalTravelDistance, 'm')}
+                  </Text>
+                )}
+              </Text>
+              </TouchableOpacity>
+              )}
+                </View> 
      
-        
-     {!mapVisible && directions && (
+    
+         {!mapVisible && directions && (
         <MapView
         style={{ flex: 1 }}
         initialRegion={{
@@ -600,65 +736,103 @@ const App: React.FC = () => {
               title={`Step ${index + 1}`}
             />
           ))}
+          {DestinationCoordinates.latitude && DestinationCoordinates.longitude && (
+             <Marker
+                 coordinate={{
+                      latitude: DestinationCoordinates.latitude,
+                  longitude: DestinationCoordinates.longitude,
+            }}
+            title="Final Destination"
+            pinColor="green" />
+            )}
         </MapView>
       )}
        
         <View>
       </View>
 
-    {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
+      {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && (
         <ScrollView style={styles.directionsContainer}>
           {directions.routes.map((route, routeIndex) => (
             <View key={routeIndex}>
               {route.legs.map((leg, legIndex) => (
                 <View key={legIndex}>
-                  {leg.steps.map((step, stepIndex) => (
-                    <View
-                      key={stepIndex}
-                      style={[ 
-                        styles.directionsRow, completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,]}>
-                      <View style={styles.directionsIcon}>
-                        {instructionIcons[step.maneuver] ? (
-                          <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} /> //maneuver image 
-                        ) : null}
+                  {leg.steps.map((step, stepIndex) => {
+                    // Update the outputString with the current step's formatted instruction
+                    outputString += `${stepIndex + 1}. ${
+                      stepIndex > 0
+                        ? `In ${formatDistance(
+                            leg.steps[stepIndex - 1].distance.value,
+                            leg.steps[stepIndex - 1].distance.unit
+                          )}, `
+                        : ''
+                    }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}\n`;
+
+                    return (
+                      <View
+                        key={stepIndex}
+                        style={[
+                          styles.directionsRow,
+                          completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,
+                        ]}>
+                        <View style={styles.directionsIcon}>
+                          {instructionIcons[step.maneuver] ? (
+                            <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} />
+                          ) : null}
+                        </View>
+                        <Text style={[styles.directionsText, { color: 'white', maxWidth: screenWidth - 60 }]}>
+                          {`${stepIndex + 1}. ${
+                            stepIndex > 0
+                              ? `In ${formatDistance(
+                                  leg.steps[stepIndex - 1].distance.value,
+                                  leg.steps[stepIndex - 1].distance.unit
+                                )}, `
+                              : ''
+                          }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
+                        </Text>
                       </View>
-                      <Text style={[styles.directionsText, { color: 'white', maxWidth: screenWidth - 60 }]}>
-                        {`${stepIndex + 1}. ${
-                          stepIndex > 0
-                            ? `In ${formatDistance(
-                                leg.steps[stepIndex - 1].distance.value,
-                                leg.steps[stepIndex - 1].distance.unit
-                              )}, `
-                            : ''
-                        }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
-                      </Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ))}
             </View>
           ))}
         </ScrollView>
       )}
-      
+
+
     </View>
   );
 };
 
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create({ 
+
+  container: {
+  flex: 1,
+  padding: 5,
+  backgroundColor: '#222', // dark
+  color: 'white', 
+  //justifyContent: "flex-start"  
+},
+innerContainer:{  
+   //flex: 1,  
+   width: "100%",  
+   //flexDirection: "row",  
+   //justifyContent: "space-between",  
+   //alignItems: "center"  
+}, 
   directionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
   },
-  
   directionsIcon: {
     marginRight: 3,
   },
   directionsText: {
     marginBottom: 5,
-    overflow: 'hidden',
+    overflow: 'hidden', 
     fontWeight: 'bold',
     color: 'white', 
   },
@@ -666,11 +840,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
-  },
-  distanceText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: 'white',
   },
   completedStep: {
     backgroundColor: 'green', 
@@ -689,29 +858,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rebeccapurple',
     textAlign: 'center',
   },
+  leftHalf: {
+    width: '50%',
+  },
+  stepDistanceText: {
+     width: '30%',
+     fontSize: 25,
+     color: 'white',
+     fontWeight: 'bold',
+     alignSelf: 'center',
+   },
   hideMapButton: {
     color: 'white',
     marginTop: 5,
-    padding: 7,
+    padding: 4,
     backgroundColor: 'darkred',
     textAlign: 'center',
   },
   showMapButton: {
     color: 'white',
     marginTop: 5,
-    padding: 7,
+    padding: 4,
     backgroundColor: 'green',
     textAlign: 'center',
   },
   map: {
     flex: 1,
-  },
-  container: {
-    flex: 1,
-    padding: 5,
-    backgroundColor: '#222', // dark
-    color: 'white', 
-  },
+  }, 
   input: {
     color: 'white',
     borderWidth: 2,
@@ -723,6 +896,16 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: 10,
   },
+  totalDistanceText: {
+    flex: 1,
+    color: 'white',
+  },
+  distanceHeader: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+
   header: {
     fontSize: 20,
     fontWeight: 'bold',
