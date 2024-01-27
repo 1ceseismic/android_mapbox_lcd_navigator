@@ -10,7 +10,7 @@ const GOOGLE_MAPS_API_KEY = 'AIzaSyBSLHFzNpmj7x5NImV6SV6JcERThBaBqvo';
 const API_BASE_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places/'
 const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
 
-import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview } from 'react-native-maps';
+import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview, Circle } from 'react-native-maps';
 import {enableLatestRenderer} from 'react-native-maps';
 import {BleManager, BleError, Device } from 'react-native-ble-plx';
 import BluetoothStateManager from 'react-native-bluetooth-state-manager';
@@ -112,6 +112,8 @@ const App: React.FC = () => {
     longitude: 0,
   }); 
 
+  const [circleRadius, setCircleRadius] = useState(0);
+
   let outputString = ''; 
 
   //for bte module
@@ -137,13 +139,16 @@ const App: React.FC = () => {
   }, []);
 
   const checkBluetoothPermissions = async () => {
+    // const bleManager = new BleManager();
+    // setManager(bleManager);
+    // fetchUserLocation();
    
-    try {
-      BluetoothStateManager.enable().then(() => {
-        console.log('Bluetooth is turned on');
-          scanDevices();
+    // try {
+    //   BluetoothStateManager.enable().then(() => {
+    //     console.log('Bluetooth is turned on');
+    //       scanDevices();
         
-    });
+    // });
       
     //   const result = await BluetoothStateManager.requestToEnable();
     //   if (result) {
@@ -152,15 +157,13 @@ const App: React.FC = () => {
     //   } else {
     //     console.warn('Bluetooth is not enabled.');
     //   }
-    } catch (error) {
-      console.error('Error checking Bluetooth permissions:', error);
-    }
+    // } catch (error) {
+    //   console.error('Error checking Bluetooth permissions:', error);
+    // }
   };
 
 
   useEffect(() => {
-    const bleManager = new BleManager();
-    setManager(bleManager);
 
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
@@ -227,46 +230,59 @@ const App: React.FC = () => {
   };
 
   const fetchUserLocation = () => {
-    Geolocation.getCurrentPosition(
-      position => {
+    const watchId = Geolocation.watchPosition(
+      (position) => {
         const { latitude, longitude } = position.coords;
         setCurrentLocation({ latitude, longitude });
-
+        
         if(navigationStarted){ //updating live
+          const nextStep = routeSteps[currentStepIndex];
+
+          const calculatedDistanceToNextStep = calculateDistance(
+            currentLocation.latitude,
+            currentLocation.longitude,
+            nextStep.start_location.lat,
+            nextStep.start_location.lng
+
+          );    
           console.log('Navigation started, explicitly updating user location')
+          console.log('user location: ', currentLocation)
         }
         else { //starting new route
           console.log('new route, reverse geocoding...')
-          reverseGeocode(latitude, longitude);
+          reverseGeocode(latitude, longitude, false);
         }
-
       },
-      error => {
-        console.error('Error getting user location:', error);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
-    );
+        (error) => {
+          console.error('Error getting location:', error);
+        },
+      
+        { enableHighAccuracy: true,}
+        );
   };
 
-  const reverseGeocode = async (latitude: number, longitude: number) => {
+  const reverseGeocode = async (latitude: number, longitude: number, address: boolean) => { //false for normal, true for watching user
     try {
       const response = await fetch(
         `${API_BASE_URL}${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`
       );
+      const data = await response.json();
+      if (data.features && data.features.length > 0) {
+        const nearestAddress = (data.features[0] as AddressFeature).place_name || '';
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.features && data.features.length > 0) {
-          const nearestAddress = (data.features[0] as AddressFeature).place_name || '';
+        if (response.ok && address == false)  {  //setting destination address
           setStartingLocation(nearestAddress);
-        }
-      } else {
+        } else if (response.ok && address == true) {
+        return nearestAddress;
+
         console.error('Error fetching user location address:', response.status);
-      }
-    } catch (error) {
-      console.error('Error fetching user location address:', error);
-    }
-  };
+      }    
+  }
+  } catch (error) {
+    console.error('Error fetching user location address:', error);
+  }
+  return '';
+}
   
   const forwardGeocode = async (placeName: string) => {
     try {
@@ -304,6 +320,7 @@ const App: React.FC = () => {
     };
 
   const fetchPotentialAddresses = async () => {
+    setCircleRadius(10);
     try {
       if (destination.length > 0) {
 
@@ -331,11 +348,15 @@ const App: React.FC = () => {
     console.log('Destination Coordinates:', DestinationCoordinates);
 
     try {
-      const currentLocation = encodeURIComponent(startingLocation);
-      const destinationLocation = encodeURIComponent(destination);
+
+      console.log('fetching directions');
+      const currentLocationReversed = await reverseGeocode(currentLocation.latitude, currentLocation.longitude, true);
+
+      const currentLocationEncoded = encodeURIComponent(currentLocationReversed);
+      const destinationLocationEncoded = encodeURIComponent(destination);
   
-      const response = await fetch(
-        `${GOOGLE_DIRECTIONS_API}?origin=${currentLocation}&destination=${destinationLocation}&key=${GOOGLE_MAPS_API_KEY}`
+      const response = await fetch( 
+        `${GOOGLE_DIRECTIONS_API}?origin=${currentLocationEncoded}&destination=${destinationLocationEncoded}&key=${GOOGLE_MAPS_API_KEY}`
       );
   
       if (response.ok) {
@@ -394,35 +415,35 @@ const App: React.FC = () => {
         console.log('Second-to-last step coordinates:', secondToLastStep.start_location);
       }
 
-          //printing steps for debugging
-          data.routes.forEach((route, routeIndex) => {
-            route.legs.forEach((leg, legIndex) => {
-              leg.steps.forEach((step, stepIndex) => {
-                console.log('Step Object:', step);
-                console.log('Maneuver Type:', step.maneuver);
+          // //printing steps for debugging
+          // data.routes.forEach((route, routeIndex) => {
+          //   route.legs.forEach((leg, legIndex) => {
+          //     leg.steps.forEach((step, stepIndex) => {
+          //       console.log('Step Object:', step);
+          //       console.log('Maneuver Type:', step.maneuver);
 
               
-                const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
+          //       const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
                 
-              if (maneuverString && maneuverString.includes('roundabout')) {
-                console.log('Roundabout present')
+          //     if (maneuverString && maneuverString.includes('roundabout')) {
+          //       console.log('Roundabout present')
 
-                const instructionString = step.html_instructions.toString()
-                const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
+          //       const instructionString = step.html_instructions.toString()
+          //       const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
 
-                const newExitNumber = match ? parseInt(match[1]) : null;
-                setExitNumber(newExitNumber);
+          //       const newExitNumber = match ? parseInt(match[1]) : null;
+          //       setExitNumber(newExitNumber);
 
-                if (exitNumber !== null) {
-                  console.log('Exit Number:', newExitNumber);
-                } else{
-                  console.log('No exit number included')
-                }} else{
-                console.log('No roundabout included')
-              }
-              });
-            });
-          });
+          //       if (exitNumber !== null) {
+          //         console.log('Exit Number:', newExitNumber);
+          //       } else{
+          //         console.log('No exit number included')
+          //       }} else{
+          //       console.log('No roundabout included')
+          //     }
+          //     });
+          //   });
+          // });
 
           // setRouteSteps(steps);
           // setNavigationStarted(true); // start live updates
@@ -468,8 +489,8 @@ const App: React.FC = () => {
     };
   
 
-    const updateRouteifClose = () => {
-      if (navigationStarted && routeSteps.length > 0) {
+    const updateRouteifClose = async () => {
+      if (navigationStarted) {
         const nextStep = routeSteps[currentStepIndex];
 
         const calculatedDistanceToNextStep = calculateDistance(
@@ -479,16 +500,16 @@ const App: React.FC = () => {
           nextStep.start_location.lng
         );    
 
-        if (calculatedDistanceToNextStep <= 10) { //metres threshold for update directions
-          if (!completedSteps.includes(currentStepIndex)) {
+        if (calculatedDistanceToNextStep < 20) { //metres threshold for update directions
 
+          if (!completedSteps.includes(currentStepIndex)) {
             sendNavigationalInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
-            setDisplayedStepIndex((prevIndex) => prevIndex + 1);
+            setDisplayedStepIndex((currentStepIndex) => currentStepIndex + 1);
             console.log('Completed Steps:', completedSteps);
     
-            if (currentStepIndex + 1 === routeSteps.length) {
+            if (currentStepIndex + 1 === routeSteps.length) { 
               setFinalStepIndex(currentStepIndex + 1);
               setNavigationStarted(false); //end of trip
             }
@@ -497,11 +518,14 @@ const App: React.FC = () => {
           if (currentStepIndex + 1 < routeSteps.length) {
             setCurrentStepIndex((prevIndex) => prevIndex + 1);
           }
+
+
         }
         if(calculatedDistanceToNextStep !== null){ 
            setDistanceToNextStep(Math.round(calculatedDistanceToNextStep / 10) * 10);}
       }
     };
+    
 
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => { //calculating distance between two coordinates / waypoints
     const R = 6371; // radius of the earth in km
@@ -592,7 +616,7 @@ const App: React.FC = () => {
   <View style={styles.container}>
     <View style={styles.innerContainer}>
 
-   <Text style={styles.header}>Halo Vision            Next Step in: {`${distanceToNextStep} m`}</Text>
+   <Text style={styles.header}>Halo Vision    Next Step in: {`${distanceToNextStep} m`}</Text>
 
       <TextInput //from field
         placeholder="Current Location"
@@ -639,9 +663,9 @@ const App: React.FC = () => {
         </Text>
       </TouchableOpacity>
  
-    <View>
+    {/* <View>
       <FlatList
-        data={devices}
+        data={devices}  
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity onPress={() => setSelectedDevice(item)}>
@@ -649,32 +673,34 @@ const App: React.FC = () => {
           </TouchableOpacity>
         )}
       />   
-      </View>
+      </View> */}
 
-      {directions && displayedStepIndex < routeSteps.length && (     //solo step shown
-        <View style={styles.currentStepContainer}>
-          <View style={styles.directionsIcon}>
-            {instructionIcons[directions.routes[0].legs[0].steps[displayedStepIndex].maneuver] ? (
-
-              <Image source={instructionIcons[directions.routes[0].legs[0].steps[displayedStepIndex].maneuver]} style={{ width: 30, height: 30 }} /> //single maneuver image displayed
-            ) : null}
-          </View>
-          <Text style={styles.directionsText}>
-            {`${displayedStepIndex + 1}. ${
-              displayedStepIndex > 0
-                ? `In ${formatDistance(
-                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.value,
-                    directions.routes[0].legs[0].steps[displayedStepIndex - 1].distance.unit
-                  )}, `
-                : ''
-            }${removeHtmlTags(
-              directions.routes[0].legs[0].steps[displayedStepIndex].html_instructions ||
-                directions.routes[0].legs[0].steps[displayedStepIndex].instructions ||
-                ''
-            )}`}
-          </Text>      
-        </View>
-      )}
+            {directions && displayedStepIndex < routeSteps.length && (   //solo step shown
+                <View style={styles.currentStepContainer}>
+                  <View style={styles.directionsIcon}>
+                    {instructionIcons[routeSteps[displayedStepIndex].maneuver] ? (
+                      <Image
+                        source={instructionIcons[routeSteps[displayedStepIndex].maneuver]}
+                        style={{ width: 30, height: 30 }}
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.directionsText}>
+                    {`${displayedStepIndex + 1}. ${
+                      displayedStepIndex > 0
+                        ? `In ${formatDistance(
+                            routeSteps[displayedStepIndex - 1].distance.value,
+                            routeSteps[displayedStepIndex - 1].distance.unit
+                          )}, `
+                        : ''
+                    }${removeHtmlTags(
+                      routeSteps[displayedStepIndex].html_instructions ||
+                        routeSteps[displayedStepIndex].instructions ||
+                        ''
+                    )}`}
+                  </Text>
+                </View>
+              )}
 
           <TouchableOpacity onPress={handleShowAllDirections}>
                 <Text style={styles.showAllDirectionsButton}>
@@ -717,6 +743,14 @@ const App: React.FC = () => {
           longitudeDelta: 0.01,
         }}
       >
+        <Circle
+          center={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+          radius={circleRadius}
+          strokeWidth={2}
+          strokeColor="#4257f5"
+          fillColor="rgba(66, 141, 245,0.3)" //light blue
+        />
+
           {/* Render the route using MapViewDirections */}
           <MapViewDirections
             origin={currentLocation}
@@ -725,6 +759,7 @@ const App: React.FC = () => {
             strokeWidth={3}
             strokeColor="red"
           />
+
           {/* Render markers at each step along the route */}
           {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
             <Marker
@@ -800,7 +835,7 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-
+                  
     </View>
   );
 };
