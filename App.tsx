@@ -18,7 +18,7 @@ import BluetoothStateManager from 'react-native-bluetooth-state-manager';
 const CHARACTERISTIC_UUID = '19B10001-E8F2-537E-4F6C-D104768A1214'; 
 
 enableLatestRenderer();
-
+const waypointThreshold = 20;
 const pathToLight = './icons/png/light/';
 
 interface AddressFeature {
@@ -86,7 +86,7 @@ const App: React.FC = () => {
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
 
-   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
+  const [directions, setDirections] = useState<DirectionsResponse | null>(null);
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
 
@@ -100,7 +100,6 @@ const App: React.FC = () => {
   const [showAllDirections, setShowAllDirections] = useState(false);
   const [currentManeuver, setCurrentManeuver] = useState<string>('');
 
-  const [userLocation, setUserLocation] = useState(null);
   const [mapVisible, setMapVisible] = useState(false);
   const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -500,7 +499,7 @@ const App: React.FC = () => {
           nextStep.start_location.lat,
           nextStep.start_location.lng
         );    
-        if (calculatedDistanceToNextStep < 20) { //metres threshold for update directions
+        if (calculatedDistanceToNextStep < waypointThreshold) { //metres threshold for update directions
 
         console.log('within threshold distance')
 
@@ -508,7 +507,7 @@ const App: React.FC = () => {
             sendNavigationalInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
-            setDisplayedStepIndex((currentStepIndex) => nextStep);
+            setDisplayedStepIndex((currentStepIndex) => currentStepIndex+1);
             console.log('Completed Steps:', completedSteps);
     
             if (currentStepIndex + 1 === routeSteps.length) { 
@@ -530,6 +529,7 @@ const App: React.FC = () => {
         }
         if(calculatedDistanceToNextStep !== null){ 
            setDistanceToNextStep(Math.round(calculatedDistanceToNextStep));
+           console.log('d to nxt step: ', calculatedDistanceToNextStep)
           }
           
       }
@@ -766,17 +766,18 @@ const App: React.FC = () => {
             strokeColor="red"
           />
 
-          {/* Render markers at each step along the route */}
-          {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
-            <Marker
-              key={index}
-              coordinate={{
-                latitude: step.start_location.lat,
-                longitude: step.start_location.lng,
-              }}
-              title={`Step ${index + 1}`}
-            />
-          ))}
+                  {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
+                    (!completedSteps.includes(index) || distanceToNextStep!==null && distanceToNextStep < waypointThreshold) && ( //only renders if they havent been completed, or if theyre further away than the threshold
+                      <Marker
+                        key={index}
+                        coordinate={{
+                          latitude: step.start_location.lat,
+                          longitude: step.start_location.lng,
+                        }}
+                        title={`Step ${index + 1}`}
+                      />
+                    )
+                  ))}
           {DestinationCoordinates.latitude && DestinationCoordinates.longitude && (
              <Marker
                  coordinate={{
