@@ -243,8 +243,8 @@ const App: React.FC = () => {
             currentLocation.longitude,
             nextStep.start_location.lat,
             nextStep.start_location.lng
+          ); 
 
-          );    
           console.log('Navigation started, explicitly updating user location')
           console.log('user location: ', currentLocation)
         }
@@ -277,7 +277,7 @@ const App: React.FC = () => {
 
         console.error('Error fetching user location address:', response.status);
       }    
-  }
+    }
   } catch (error) {
     console.error('Error fetching user location address:', error);
   }
@@ -320,7 +320,7 @@ const App: React.FC = () => {
     };
 
   const fetchPotentialAddresses = async () => {
-    setCircleRadius(10);
+    setCircleRadius(5);
     try {
       if (destination.length > 0) {
 
@@ -493,20 +493,22 @@ const App: React.FC = () => {
       if (navigationStarted) {
         const nextStep = routeSteps[currentStepIndex];
 
+
         const calculatedDistanceToNextStep = calculateDistance(
           currentLocation.latitude,
           currentLocation.longitude,
           nextStep.start_location.lat,
           nextStep.start_location.lng
         );    
-
         if (calculatedDistanceToNextStep < 20) { //metres threshold for update directions
+
+        console.log('within threshold distance')
 
           if (!completedSteps.includes(currentStepIndex)) {
             sendNavigationalInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
-            setDisplayedStepIndex((currentStepIndex) => currentStepIndex + 1);
+            setDisplayedStepIndex((currentStepIndex) => nextStep);
             console.log('Completed Steps:', completedSteps);
     
             if (currentStepIndex + 1 === routeSteps.length) { 
@@ -516,13 +518,20 @@ const App: React.FC = () => {
           }
     
           if (currentStepIndex + 1 < routeSteps.length) {
-            setCurrentStepIndex((prevIndex) => prevIndex + 1);
+            setCurrentStepIndex((currentStepIndex) => currentStepIndex + 1);
+            console.log('increasing setCurrentStepIndex in updateroute')
           }
-
-
+          else{
+            console.log('next step is last in route')
+          }
+       }
+        else{
+          console.log('not within threshhold yet, calculated dist: ', calculatedDistanceToNextStep)
         }
         if(calculatedDistanceToNextStep !== null){ 
-           setDistanceToNextStep(Math.round(calculatedDistanceToNextStep / 10) * 10);}
+           setDistanceToNextStep(Math.round(calculatedDistanceToNextStep));
+          }
+          
       }
     };
     
@@ -539,15 +548,12 @@ const App: React.FC = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const calculatedDistance = R * c; // Distance in km
 
-    setDistanceToNextStep(calculatedDistance); // Update the global state variable
     return calculatedDistance * 1000; // Convert to meters
   };
 
   const deg2rad = (deg: number) => {
     return deg * (Math.PI / 180);
   };
-
-
 
   const handleDestinationChange = (text: string) => {
     setDestination(text);
