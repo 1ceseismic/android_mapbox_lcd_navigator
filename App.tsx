@@ -85,6 +85,7 @@ const App: React.FC = () => {
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
+  const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
 
   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
   const [startingLocation, setStartingLocation] = useState('');
@@ -101,7 +102,6 @@ const App: React.FC = () => {
   const [currentManeuver, setCurrentManeuver] = useState<string>('');
 
   const [mapVisible, setMapVisible] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState({ latitude: 0, longitude: 0 });
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
   const [totalTravelDistance, setTotalTravelDistance] = useState<number | null>(null);
   const [exitNumber, setExitNumber] = useState<number | null>(null);
@@ -229,7 +229,7 @@ const App: React.FC = () => {
   };
 
   const fetchUserLocation = () => {
-    const watchId = Geolocation.watchPosition(
+    Geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
         setCurrentLocation({ latitude, longitude });
@@ -256,7 +256,7 @@ const App: React.FC = () => {
           console.error('Error getting location:', error);
         },
       
-        { enableHighAccuracy: true,}
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
         );
   };
 
@@ -353,6 +353,10 @@ const App: React.FC = () => {
 
       const currentLocationEncoded = encodeURIComponent(currentLocationReversed);
       const destinationLocationEncoded = encodeURIComponent(destination);
+
+      console.log('currentLocationEncoded: ', currentLocationEncoded)
+      console.log('destinationLocatedEncoded: ', destinationLocationEncoded)
+
   
       const response = await fetch( 
         `${GOOGLE_DIRECTIONS_API}?origin=${currentLocationEncoded}&destination=${destinationLocationEncoded}&key=${GOOGLE_MAPS_API_KEY}`
@@ -525,11 +529,10 @@ const App: React.FC = () => {
           }
        }
         else{
-          console.log('not within threshhold yet, calculated dist: ', calculatedDistanceToNextStep)
+          console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', calculatedDistanceToNextStep)
         }
         if(calculatedDistanceToNextStep !== null){ 
            setDistanceToNextStep(Math.round(calculatedDistanceToNextStep));
-           console.log('d to nxt step: ', calculatedDistanceToNextStep)
           }
           
       }
