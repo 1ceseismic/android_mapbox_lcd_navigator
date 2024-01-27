@@ -166,7 +166,6 @@ const App: React.FC = () => {
 
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
-        updateRouteifClose();
         fetchUserLocation();
       }, 3000);  // check user location + claculation delay
       return () => clearInterval(locationUpdateInterval);
@@ -235,6 +234,9 @@ const App: React.FC = () => {
         setCurrentLocation({ latitude, longitude });
         
         if(navigationStarted){ //updating live
+          updateRouteifClose();
+          setCircleRadius(5);
+
           const nextStep = routeSteps[currentStepIndex];
 
           const calculatedDistanceToNextStep = calculateDistance(
@@ -243,6 +245,10 @@ const App: React.FC = () => {
             nextStep.start_location.lat,
             nextStep.start_location.lng
           ); 
+            if (calculatedDistanceToNextStep!==null){
+              setDistanceToNextStep(Math.round(calculatedDistanceToNextStep)) //rounded dist to next step
+              console.log('set distance to next step: ', distanceToNextStep)
+            }
 
           console.log('Navigation started, explicitly updating user location')
           console.log('user location: ', currentLocation)
@@ -256,7 +262,7 @@ const App: React.FC = () => {
           console.error('Error getting location:', error);
         },
       
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
         );
   };
 
@@ -304,7 +310,6 @@ const App: React.FC = () => {
                 latitude: location.lat,
                 longitude: location.lng,
               });
-  
             }
            
           } else {
@@ -319,7 +324,6 @@ const App: React.FC = () => {
     };
 
   const fetchPotentialAddresses = async () => {
-    setCircleRadius(5);
     try {
       if (destination.length > 0) {
 
@@ -468,7 +472,7 @@ const App: React.FC = () => {
           // Step 2: Discover the characteristics of the Bluetooth service
           const services = await device.discoverAllServicesAndCharacteristics();
           const characteristic = (services as any).characteristics.find(
-            (c: { uuid: string; }) => c.uuid === 'YOUR_CHARACTERISTIC_UUID' // Replace with your actual characteristic UUID
+            (c: { uuid: string; }) => c.uuid === CHARACTERISTIC_UUID // Replace with your actual characteristic UUID
           );
     
           if (characteristic) {
@@ -496,14 +500,7 @@ const App: React.FC = () => {
       if (navigationStarted) {
         const nextStep = routeSteps[currentStepIndex];
 
-
-        const calculatedDistanceToNextStep = calculateDistance(
-          currentLocation.latitude,
-          currentLocation.longitude,
-          nextStep.start_location.lat,
-          nextStep.start_location.lng
-        );    
-        if (calculatedDistanceToNextStep < waypointThreshold) { //metres threshold for update directions
+        if (distanceToNextStep!==null && distanceToNextStep < waypointThreshold) { //metres threshold for update directions
 
         console.log('within threshold distance')
 
@@ -529,10 +526,10 @@ const App: React.FC = () => {
           }
        }
         else{
-          console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', calculatedDistanceToNextStep)
+          console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', distanceToNextStep)
         }
-        if(calculatedDistanceToNextStep !== null){ 
-           setDistanceToNextStep(Math.round(calculatedDistanceToNextStep));
+        if(distanceToNextStep !== null){ 
+           setDistanceToNextStep(Math.round(distanceToNextStep));
           }
           
       }
@@ -982,4 +979,3 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
