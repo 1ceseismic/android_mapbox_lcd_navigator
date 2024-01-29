@@ -12,12 +12,14 @@ const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/j
 
 import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview, Circle } from 'react-native-maps';
 import {enableLatestRenderer} from 'react-native-maps';
-import BluetoothSerialNext from 'react-native-bluetooth-serial-next';
+import BluetoothSerialNext, { connect } from 'react-native-bluetooth-serial-next';
+import {BleManager, BleError, Device } from 'react-native-ble-plx';
+import BluetoothStateManager from 'react-native-bluetooth-state-manager';
 
 const CHARACTERISTIC_UUID = '19B10001-E8F2-537E-4F6C-D104768A1214'; 
 
 enableLatestRenderer();
-const waypointThreshold = 20;
+const waypointThreshold = 10;
 const pathToLight = './icons/png/light/';
 
 interface AddressFeature {
@@ -59,7 +61,7 @@ const App: React.FC = () => {
       if (result === RESULTS.GRANTED) {
         // permission is already granted
         setLocationPermissionGranted(true);
-        fetchUserLocationWithRetry();
+        fetchUserLocation();
 
       } else {
         // permission isnt granted so request it
@@ -78,24 +80,6 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error checking Bluetooth permissions:', error);
-    }
-  };
-
-  const fetchUserLocationWithRetry = async () => {
-    const maxAttempts = 3;
-    let currentAttempt = 1;
-  
-    while (currentAttempt <= maxAttempts) {
-      try {
-        await fetchUserLocation();
-        break; // If successful, exit the loop
-      } catch (error) {
-        console.error(`Error fetching user location (attempt ${currentAttempt}):`, error);
-      }
-  
-      // Wait for a brief period before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      currentAttempt += 1;
     }
   };
 
@@ -127,71 +111,88 @@ const App: React.FC = () => {
     longitude: 0,
   }); 
 
-  const [circleRadius, setCircleRadius] = useState(0);
+    //for bte module
+    const [isConnected, setIsConnected] = useState(false);
+    const [manager, setManager] = useState<BleManager | null>(null);
 
+  const [circleRadius, setCircleRadius] = useState(0);
   let outputString = ''; 
 
-  //for bte module
-  const [isConnected, setIsConnected] = useState(false);
-
-
-  const handleShowAllDirections = () => {
-    setShowAllDirections((prevValue) => !prevValue);
-  };
-
-  const handleShowMap = () => {
-    setMapVisible((prevValue) => !prevValue);
-    Keyboard.dismiss(); //recess mobile keyboard by auto
-  };
-
-
-  useEffect(() => {
-    checkLocationPermission();
-    useEffect(() => {
-      const connectToDevice = async () => {
-        try {
-          const device = await BluetoothSerialNext.list();
-          if (device.length > 0) {
-            await BluetoothSerialNext.connect(device[0].id);
-            setIsConnected(true);
-          }
-        } catch (error) {
-          console.error('Error connecting to Bluetooth device:', error);
-        }
-      };
-  
-      connectToDevice();
-  
-      return () => {
-        // Clean up the Bluetooth connection when the component is unmounted
-        BluetoothSerialNext.disconnect();
-      };
+    useEffect(() => {  //runs one time on load
+      checkLocationPermission();
+      checkBluetoothPermissions();
     }, []);
-  }, []);
 
+    useEffect(() => { //runs on loop with delay
+      if (navigationStarted) {
+        const locationUpdateInterval = setInterval(() => {
+          fetchUserLocation();
+        }, 2000); // check user location + calculation delay
+    
+        // Clear the interval when the component unmounts or navigation stops
+        return () => clearInterval(locationUpdateInterval);
+      }
+    }, [navigationStarted, currentStepIndex, currentLocation]);
+    
 
+    const checkBluetoothPermissions = async () => {
+      const bleManager = new BleManager();
+      setManager(bleManager);
+     
+      try {
+        BluetoothStateManager.enable().then(() => {
+          console.log('Bluetooth is turned on');
+            connectToDevice();
+          
+      });
+        
+        const result = await BluetoothStateManager.requestToEnable();
+        if (result) {
+          connectToDevice();
+          console.log('bt enabled, scanning for devices')
+        } else {
+          console.warn('Bluetooth is not enabled.');
+        }
+      } catch (error) {
+        console.error('Error checking Bluetooth permissions:', error);
+      }
+    };
+    const connectToDevice = async () => {
+      try {
+        const device = await BluetoothSerialNext.list();
+        if (device.length > 0) {
+          await BluetoothSerialNext.connect(device[0].id);
+          setIsConnected(true);
+        }
+      } catch (error) {
+        console.error('Error connecting to Bluetooth device:', error);
+      }
+    };
 
-  useEffect(() => {
-    if (navigationStarted) {
-      const locationUpdateInterval = setInterval(() => {
-        fetchUserLocation();
-      }, 2000); // check user location + calculation delay
+    const handleShowAllDirections = () => {
+      setShowAllDirections((prevValue) => !prevValue);
+    };
   
-      // Clear the interval when the component unmounts or navigation stops
-      return () => clearInterval(locationUpdateInterval);
-    }
-  }, [navigationStarted, currentStepIndex, currentLocation]);
-  
+    const handleShowMap = () => {
+      setMapVisible((prevValue) => !prevValue);
+      Keyboard.dismiss(); //recess mobile keyboard by auto
+    };
 
-  const fetchUserLocation = () => {
+  const fetchUserLocation = (resolve: ((arg0: { latitude: number; longitude: number; }) => void) | undefined, enableHighAccuracy: undefined, onError: Geolocation.ErrorCallback | undefined) => {
     Geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        setCurrentLocation({ latitude, longitude });
+        const location = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude       
+        }
+        setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
+        if (resolve) {
+          resolve(location);
+        }
 
         if(navigationStarted){ //updating live
           setCircleRadius(5);
-          setCurrentLocation({ latitude, longitude });
+          setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
 
           const nextStep = routeSteps[currentStepIndex];
 
@@ -212,17 +213,13 @@ const App: React.FC = () => {
         }
         else { //starting new route
           console.log('new route, reverse geocoding...')
-          reverseGeocode(latitude, longitude, false);
+          setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
         }
       },
-        (error) => {
-          console.error('Error getting location:', error);
-        },
-      
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
-        );
+      onError,
+      {enableHighAccuracy, timeout: 20000}
+    );     
   };
-
   const reverseGeocode = async (latitude: number, longitude: number, address: boolean) => { //false for normal, true for watching user
     try {
       const response = await fetch(
@@ -584,12 +581,10 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-<Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
-      <Button
-        title="Send Instructions"
-        onPress={() => sendInstructions('YourInstructionString')}
-        disabled={!isConnected}
-      />
+          <TouchableOpacity style={styles.connectButton}>
+              <Text>{isConnected ? 'Connected' : 'Not connected'}
+              </Text>
+          </TouchableOpacity>
 
       <TouchableOpacity onPress={fetchDirections}>
         <Text style={{ color: 'white',
@@ -817,13 +812,14 @@ innerContainer:{
   completedStep: {
     backgroundColor: 'green', 
   },
-  testButton: {
+  connectButton: {
     color: 'white',
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: 'blue',
+    marginTop: 3,
+    padding: 4,
+    backgroundColor: 'olivedrab',
     textAlign: 'center',
   },
+
   showAllDirectionsButton: {
     color: 'white',
     marginTop: 5,
@@ -910,3 +906,23 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
+/**
+ * We first try to get location with enableHighAccuracy=true (try to get position via GPS) if it fails try to get it with enableHighAccuracy=false (try to get position from wifi)
+ * @return {Promise}
+ */
+export const fetchUserLocation = () => {
+  return new Promise((resolve) => {
+    fetchUserLocation(resolve, true,
+          (error1) => {
+              // failed to retrieve with enableHighAccuracy=true - now try with enableHighAccuracy=false
+              console.log(`[getCurrentPosition] failed 1st time trying again with enableHighAccuracy=false, error: ${error1.message}`);
+
+              getCurrentLocation(resolve, false, (error2) => {
+                  // Could not retrieve location - we can live with that
+                  console.log(`[getCurrentPosition] failed ${error2.message}`);
+                  resolve();
+              })
+          });
+  });
+}
+
