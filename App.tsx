@@ -60,7 +60,7 @@ const App: React.FC = () => {
       if (result === RESULTS.GRANTED) {
         // permission is already granted
         setLocationPermissionGranted(true);
-        fetchUserLocation();
+        fetchUserLocationWithRetry();
 
       } else {
         // permission isnt granted so request it
@@ -79,6 +79,24 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error checking Bluetooth permissions:', error);
+    }
+  };
+
+  const fetchUserLocationWithRetry = async () => {
+    const maxAttempts = 3;
+    let currentAttempt = 1;
+  
+    while (currentAttempt <= maxAttempts) {
+      try {
+        await fetchUserLocation();
+        break; // If successful, exit the loop
+      } catch (error) {
+        console.error(`Error fetching user location (attempt ${currentAttempt}):`, error);
+      }
+  
+      // Wait for a brief period before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      currentAttempt += 1;
     }
   };
 
@@ -166,7 +184,7 @@ const App: React.FC = () => {
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
         fetchUserLocation();
-      }, 3000); // check user location + calculation delay
+      }, 2000); // check user location + calculation delay
   
       // Clear the interval when the component unmounts or navigation stops
       return () => clearInterval(locationUpdateInterval);
@@ -265,7 +283,7 @@ const App: React.FC = () => {
           console.error('Error getting location:', error);
         },
       
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
         );
   };
 
