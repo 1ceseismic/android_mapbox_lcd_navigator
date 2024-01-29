@@ -163,14 +163,16 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-
     if (navigationStarted) {
       const locationUpdateInterval = setInterval(() => {
         fetchUserLocation();
-      }, 3000);  // check user location + claculation delay
+      }, 3000); // check user location + calculation delay
+  
+      // Clear the interval when the component unmounts or navigation stops
       return () => clearInterval(locationUpdateInterval);
     }
-  }, [navigationStarted, currentStepIndex]);
+  }, [navigationStarted, currentStepIndex, currentLocation]);
+  
   
   const scanDevices = async () => {
     try {
@@ -232,10 +234,10 @@ const App: React.FC = () => {
       (position) => {
         const { latitude, longitude } = position.coords;
         setCurrentLocation({ latitude, longitude });
-        
+
         if(navigationStarted){ //updating live
-          updateRouteifClose();
           setCircleRadius(5);
+          setCurrentLocation({ latitude, longitude });
 
           const nextStep = routeSteps[currentStepIndex];
 
@@ -247,7 +249,8 @@ const App: React.FC = () => {
           ); 
             if (calculatedDistanceToNextStep!==null){
               setDistanceToNextStep(Math.round(calculatedDistanceToNextStep)) //rounded dist to next step
-              console.log('set distance to next step: ', distanceToNextStep)
+              console.log('set distance to next step: ', calculatedDistanceToNextStep)
+              updateRouteifClose();
             }
 
           console.log('Navigation started, explicitly updating user location')
@@ -262,7 +265,7 @@ const App: React.FC = () => {
           console.error('Error getting location:', error);
         },
       
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
         );
   };
 
@@ -381,7 +384,7 @@ const App: React.FC = () => {
               steps.push(step);
 
 
-              sendNavigationalInstructions(outputString);
+              //sendNavigationalInstructions(outputString);
             });
           });
         });
@@ -528,9 +531,9 @@ const App: React.FC = () => {
         else{
           console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', distanceToNextStep)
         }
-        if(distanceToNextStep !== null){ 
-           setDistanceToNextStep(Math.round(distanceToNextStep));
-          }
+        // if(distanceToNextStep !== null){ 
+        //    setDistanceToNextStep(Math.round(distanceToNextStep));
+        //   }
           
       }
     };
