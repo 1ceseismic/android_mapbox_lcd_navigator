@@ -12,8 +12,7 @@ const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/j
 
 import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview, Circle } from 'react-native-maps';
 import {enableLatestRenderer} from 'react-native-maps';
-import {BleManager, BleError, Device } from 'react-native-ble-plx';
-import BluetoothStateManager from 'react-native-bluetooth-state-manager';
+import BluetoothSerialNext from 'react-native-bluetooth-serial-next';
 
 const CHARACTERISTIC_UUID = '19B10001-E8F2-537E-4F6C-D104768A1214'; 
 
@@ -123,7 +122,6 @@ const App: React.FC = () => {
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
   const [totalTravelDistance, setTotalTravelDistance] = useState<number | null>(null);
   const [exitNumber, setExitNumber] = useState<number | null>(null);
-  
   const [DestinationCoordinates, setDestinationCoordinates] = useState<{ latitude: number; longitude: number }>({
     latitude: 0,
     longitude: 0,
@@ -134,10 +132,7 @@ const App: React.FC = () => {
   let outputString = ''; 
 
   //for bte module
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [device, setDevice] = useState<Device | null>(null); 
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [manager, setManager] = useState<BleManager | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
 
   const handleShowAllDirections = () => {
@@ -152,32 +147,28 @@ const App: React.FC = () => {
 
   useEffect(() => {
     checkLocationPermission();
-    checkBluetoothPermissions();
+    useEffect(() => {
+      const connectToDevice = async () => {
+        try {
+          const device = await BluetoothSerialNext.list();
+          if (device.length > 0) {
+            await BluetoothSerialNext.connect(device[0].id);
+            setIsConnected(true);
+          }
+        } catch (error) {
+          console.error('Error connecting to Bluetooth device:', error);
+        }
+      };
+  
+      connectToDevice();
+  
+      return () => {
+        // Clean up the Bluetooth connection when the component is unmounted
+        BluetoothSerialNext.disconnect();
+      };
+    }, []);
   }, []);
 
-  const checkBluetoothPermissions = async () => {
-    // const bleManager = new BleManager();
-    // setManager(bleManager);
-    // fetchUserLocation();
-   
-    // try {
-    //   BluetoothStateManager.enable().then(() => {
-    //     console.log('Bluetooth is turned on');
-    //       scanDevices();
-        
-    // });
-      
-    //   const result = await BluetoothStateManager.requestToEnable();
-    //   if (result) {
-    //     scanDevices();
-    //     console.log('bt enabled, scanning for devices')
-    //   } else {
-    //     console.warn('Bluetooth is not enabled.');
-    //   }
-    // } catch (error) {
-    //   console.error('Error checking Bluetooth permissions:', error);
-    // }
-  };
 
 
   useEffect(() => {
@@ -191,61 +182,6 @@ const App: React.FC = () => {
     }
   }, [navigationStarted, currentStepIndex, currentLocation]);
   
-  
-  const scanDevices = async () => {
-    try {
-      const manager = new BleManager();
-
-      const subscription = manager.onStateChange((state) => {
-        if (state === 'PoweredOn') {
-          manager.startDeviceScan(null, null, (error, scannedDevice) => {
-            if (error) {
-              console.error('Scan error:', error);
-              return;
-            }
-
-            if (scannedDevice) {
-              setDevices((prevDevices) => {
-                if (!prevDevices.some((dev) => dev.id === scannedDevice.id)) {
-                  return [...prevDevices, scannedDevice];
-                }
-                return prevDevices;
-              });
-            }
-          });
-            //bte scanning timeout limit
-          setTimeout(() => {
-            manager.stopDeviceScan();
-          }, 30000);
-        }
-      }, true);
-
-      return () => {
-        subscription.remove();
-        manager.destroy();
-      };
-    } catch (error) {
-      console.error('Error scanning devices or Bluetooth not enabled:', error);
-    }
-  };
-
- 
-  const connectToDevice = async (manager: BleManager | null, selectedDevice: Device | null) => {
-    try {
-      if (manager && selectedDevice) {
-        console.log('Connecting to device:', selectedDevice.name || selectedDevice.id)
-
-        // const device = manager.connectToDevice(selectedDevice.id)
-
-        const connectedDevice = await selectedDevice.connect();
-        setDevice(connectedDevice);
-      } else {
-        console.warn('No manager or device available for connection.');
-      }
-    } catch (error) {
-      console.error('Error connecting to device:', error);
-    }
-  };
 
   const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
@@ -402,7 +338,7 @@ const App: React.FC = () => {
               steps.push(step);
 
 
-              //sendNavigationalInstructions(outputString);
+              sendInstructions(outputString);
             });
           });
         });
@@ -483,36 +419,12 @@ const App: React.FC = () => {
       }
     };
 
-    const sendNavigationalInstructions = async (outputString: string) => {
-
-      if (device && manager) {
-        try {
-          // Step 1: Connect to the Bluetooth device
-          await device.connect();
-    
-          // Step 2: Discover the characteristics of the Bluetooth service
-          const services = await device.discoverAllServicesAndCharacteristics();
-          const characteristic = (services as any).characteristics.find(
-            (c: { uuid: string; }) => c.uuid === CHARACTERISTIC_UUID // Replace with your actual characteristic UUID
-          );
-    
-          if (characteristic) {
-            // Step 3: Write data to the characteristic to send instructions
-            await characteristic.writeWithResponse(outputString);
-    
-            console.log('Navigational instructions sent successfully:', outputString);
-          } else {
-            console.error('Characteristic not found.');
-          }
-    
-          // Disconnect after sending data (if needed)
-          await device.cancelConnection();
-    
-        } catch (error) {
-          console.error('Error sending navigational instructions:', error);
-        }
-      } else {
-        console.warn('Device or manager not available for sending instructions.');
+    const sendInstructions = async (instructions: string | BluetoothSerialNext.Buffer) => {
+      try {
+        await BluetoothSerialNext.write(instructions);
+        console.log('Instructions sent successfully:', instructions);
+      } catch (error) {
+        console.error('Error sending instructions:', error);
       }
     };
   
@@ -526,7 +438,7 @@ const App: React.FC = () => {
         console.log('within threshold distance')
 
           if (!completedSteps.includes(currentStepIndex)) {
-            sendNavigationalInstructions(outputString);
+            sendInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
             setDisplayedStepIndex((currentStepIndex) => currentStepIndex+1);
@@ -672,14 +584,12 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-      <TouchableOpacity onPress={() => connectToDevice(manager, selectedDevice)}>
-        <Text style={{ color: 'white',
-          marginTop: 3,
-          padding: 4,
-          backgroundColor: 'olivedrab',
-          textAlign: 'center',}}> {'Connect to selected device'}
-        </Text>
-      </TouchableOpacity>
+<Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
+      <Button
+        title="Send Instructions"
+        onPress={() => sendInstructions('YourInstructionString')}
+        disabled={!isConnected}
+      />
 
       <TouchableOpacity onPress={fetchDirections}>
         <Text style={{ color: 'white',
