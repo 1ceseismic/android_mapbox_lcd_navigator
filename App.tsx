@@ -50,38 +50,6 @@ interface DirectionsResponse {
 
 const App: React.FC = () => { 
 
-  const checkLocationPermission = async () => {
-    try {
-      const result = await check(
-        Platform.OS === 'ios'
-          ? PERMISSIONS.IOS.LOCATION_ALWAYS
-          : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
-      );
-      
-      if (result === RESULTS.GRANTED) {
-        // permission is already granted
-        setLocationPermissionGranted(true);
-        fetchUserLocation();
-
-      } else {
-        // permission isnt granted so request it
-        const permissionResult = await request(
-          Platform.OS === 'ios'
-            ? PERMISSIONS.IOS.LOCATION_ALWAYS
-            : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
-        );
-        if (permissionResult === RESULTS.GRANTED) {
-          // Permission granted after request
-          setLocationPermissionGranted(true);
-          fetchUserLocation();
-        } else { 
-          console.warn('Location permission denied.');
-        }
-      }
-    } catch (error) {
-      console.error('Error checking Bluetooth permissions:', error);
-    }
-  };
 
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [destination, setDestination] = useState('');
@@ -120,13 +88,13 @@ const App: React.FC = () => {
 
     useEffect(() => {  //runs one time on load
       checkLocationPermission();
-      checkBluetoothPermissions();
+      //checkBluetoothPermissions();
     }, []);
 
     useEffect(() => { //runs on loop with delay
       if (navigationStarted) {
         const locationUpdateInterval = setInterval(() => {
-          fetchUserLocation();
+          fetchUserLocation()
         }, 2000); // check user location + calculation delay
     
         // Clear the interval when the component unmounts or navigation stops
@@ -134,6 +102,38 @@ const App: React.FC = () => {
       }
     }, [navigationStarted, currentStepIndex, currentLocation]);
     
+    const checkLocationPermission = async () => {
+      try {
+        const result = await check(
+          Platform.OS === 'ios'
+            ? PERMISSIONS.IOS.LOCATION_ALWAYS
+            : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
+        );
+        
+        if (result === RESULTS.GRANTED) {
+          // permission is already granted
+          setLocationPermissionGranted(true);
+          fetchUserLocation();
+  
+        } else {
+          // permission isnt granted so request it
+          const permissionResult = await request(
+            Platform.OS === 'ios'
+              ? PERMISSIONS.IOS.LOCATION_ALWAYS
+              : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
+          );
+          if (permissionResult === RESULTS.GRANTED) {
+            // Permission granted after request
+            setLocationPermissionGranted(true);
+            fetchUserLocation();
+          } else { 
+            console.warn('Location permission denied.');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking Bluetooth permissions:', error);
+      }
+    };
 
     const checkBluetoothPermissions = async () => {
       const bleManager = new BleManager();
@@ -178,21 +178,15 @@ const App: React.FC = () => {
       Keyboard.dismiss(); //recess mobile keyboard by auto
     };
 
-  const fetchUserLocation = (resolve: ((arg0: { latitude: number; longitude: number; }) => void) | undefined, enableHighAccuracy: undefined, onError: Geolocation.ErrorCallback | undefined) => {
+  const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
       (position) => {
-        const location = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude       
-        }
-        setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
-        if (resolve) {
-          resolve(location);
-        }
+        const { latitude, longitude } = position.coords;
+        setCurrentLocation({ latitude, longitude });
 
         if(navigationStarted){ //updating live
           setCircleRadius(5);
-          setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
+          setCurrentLocation({ latitude, longitude });
 
           const nextStep = routeSteps[currentStepIndex];
 
@@ -211,14 +205,19 @@ const App: React.FC = () => {
           console.log('Navigation started, explicitly updating user location')
           console.log('user location: ', currentLocation)
         }
-        else { //starting new route
+        else { //starting new route so search for address
           console.log('new route, reverse geocoding...')
-          setCurrentLocation({ latitude: location.latitude, longitude: location.longitude });
+          setCurrentLocation({ latitude, longitude });
+          reverseGeocode(latitude, longitude, false);
         }
       },
-      onError,
-      {enableHighAccuracy, timeout: 20000}
-    );     
+      (error) => {
+        console.error('Error getting location:', error);
+      },
+    
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000}
+      ); 
+    
   };
   const reverseGeocode = async (latitude: number, longitude: number, address: boolean) => { //false for normal, true for watching user
     try {
@@ -277,23 +276,43 @@ const App: React.FC = () => {
       }
     };
 
-  const fetchPotentialAddresses = async () => {
+  const fetchPotentialAddresses = async (choice: string) => {
     try {
-      if (destination.length > 0) {
+      if (choice === 'destination') {
+        if (destination.length > 0) {
 
-        const response = await fetch(
-          `${API_BASE_URL}${encodeURIComponent(destination)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setPotentialAddresses(data.features || []);
+          const response = await fetch(
+            `${API_BASE_URL}${encodeURIComponent(destination)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
+          );
+  
+          if (response.ok) {
+            const data = await response.json();
+            setPotentialAddresses(data.features || []);
+          } else {
+            //console.error('Error fetching potential addresses:', response.status);
+          }
         } else {
-          //console.error('Error fetching potential addresses:', response.status);
+          setPotentialAddresses([]);
         }
-      } else {
-        setPotentialAddresses([]);
+
+      } else if (choice === 'starting'){ 
+        if (startingLocation.length > 0) {
+
+          const response = await fetch(
+            `${API_BASE_URL}${encodeURIComponent(startingLocation)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
+          );
+  
+          if (response.ok) {
+            const data = await response.json();
+            setPotentialAddresses(data.features || []);
+          } else {
+            //console.error('Error fetching potential addresses:', response.status);
+          }
+        } else {
+          setPotentialAddresses([]);
+        }
       }
+     
     } catch (error) {
       //console.error('Error fetching potential addresses:', error);
     }
@@ -485,20 +504,28 @@ const App: React.FC = () => {
     return deg * (Math.PI / 180);
   };
 
-  const handleDestinationChange = (text: string) => {
-    setDestination(text);
+  const handleDestinationChange = (text: string, choice: boolean) => {
+    if (choice == false) {
+      setDestination(text); //false = desintation
+      fetchPotentialAddresses('destination');
+    }
+    else if (choice) {
+      setStartingLocation(text); //true = address
+      fetchPotentialAddresses('starting');
+
+    }
     setNavigationStarted(false); // Reset navigation status when destination changes
-    fetchPotentialAddresses();
   };
 
   const handleAddressSelect = (selectedAddress: string) => {
     setDestination(selectedAddress);
     setPotentialAddresses([]); // Clear address suggestions
   };
+
+
   const removeHtmlTags = (text: string) => {
     return text.replace(/<\/?[^>]+(>|$)/g, ''); // Regex to remove HTML tags
   };
-
   const formatDistance = (distanceValue: number, unit: string) => {
     let formattedDistance = '';
     const roundedDistance = Math.round(distanceValue);
@@ -554,32 +581,34 @@ const App: React.FC = () => {
 
    <Text style={styles.header}>Halo Vision    Next Step in: {`${distanceToNextStep} m`}</Text>
 
-      <TextInput //from field
+   <React.Fragment>
+      <TextInput
         placeholder="Current Location"
         style={styles.input}
         value={startingLocation}
-        onChangeText={text => setStartingLocation(text)}
-      />
-      <TextInput  //destination field
+        onChangeText={(text) => handleDestinationChange(text, true)}
+        />
+      <TextInput
         style={styles.input}
-        placeholder="Destination" 
+        placeholder="Destination"
         value={destination}
-        onChangeText={handleDestinationChange}
-      />
+        onChangeText={(text) => handleDestinationChange(text, false)}
+        />
       {potentialAddresses.length > 0 && (
         <ScrollView style={styles.addressesContainer}>
-          {potentialAddresses.map((address, index) => ( //address auto fill
+          {potentialAddresses.map((address, index) => (
             <TouchableOpacity
               key={index}
-              onPress={() => { 
-                forwardGeocode(address.place_name); 
+              onPress={() => {
                 handleAddressSelect(address.place_name);
-              }}>
+              }}
+            >
               <Text style={styles.addressText}>{address.place_name || ''}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
+    </React.Fragment>
 
           <TouchableOpacity style={styles.connectButton}>
               <Text>{isConnected ? 'Connected' : 'Not connected'}
@@ -906,23 +935,7 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-/**
- * We first try to get location with enableHighAccuracy=true (try to get position via GPS) if it fails try to get it with enableHighAccuracy=false (try to get position from wifi)
- * @return {Promise}
- */
-export const fetchUserLocation = () => {
-  return new Promise((resolve) => {
-    fetchUserLocation(resolve, true,
-          (error1) => {
-              // failed to retrieve with enableHighAccuracy=true - now try with enableHighAccuracy=false
-              console.log(`[getCurrentPosition] failed 1st time trying again with enableHighAccuracy=false, error: ${error1.message}`);
 
-              getCurrentLocation(resolve, false, (error2) => {
-                  // Could not retrieve location - we can live with that
-                  console.log(`[getCurrentPosition] failed ${error2.message}`);
-                  resolve();
-              })
-          });
-  });
-}
+
+
 
