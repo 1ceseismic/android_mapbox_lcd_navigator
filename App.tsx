@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
   const [startingLocation, setStartingLocation] = useState('');
   const [navigationStarted, setNavigationStarted] = useState(false);
+  const [isChangingCurrentLocation, setIsChangingCurrentLocation] = useState(false);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [displayedStepIndex, setDisplayedStepIndex] = useState(0);
@@ -233,7 +234,6 @@ const App: React.FC = () => {
         } else if (response.ok && address == true) {
         return nearestAddress;
 
-        console.error('Error fetching user location address:', response.status);
       }    
     }
   } catch (error) {
@@ -358,7 +358,6 @@ const App: React.FC = () => {
             });
           });
         });
-
 
         let secondToLastStep: Step | undefined = undefined;
         if (FinalStepIndex !== null && FinalStepIndex > 0 && FinalStepIndex < steps.length) {
@@ -506,21 +505,30 @@ const App: React.FC = () => {
 
   const handleDestinationChange = (text: string, choice: boolean) => {
     if (choice == false) {
-      setDestination(text); //false = desintation
+      setDestination(text); 
       fetchPotentialAddresses('destination');
+      setIsChangingCurrentLocation(false); //false = entering desintation
+
     }
     else if (choice) {
       setStartingLocation(text); //true = address
       fetchPotentialAddresses('starting');
-
+      setIsChangingCurrentLocation(true);
     }
     setNavigationStarted(false); // Reset navigation status when destination changes
   };
 
+
   const handleAddressSelect = (selectedAddress: string) => {
-    setDestination(selectedAddress);
-    setPotentialAddresses([]); // Clear address suggestions
+    //console.log('ischangingcurrentlocation?: ', isChangingCurrentLocation)
+    if (isChangingCurrentLocation) {
+      setStartingLocation(selectedAddress);
+    } else {
+      setDestination(selectedAddress);
+    }
+    setPotentialAddresses([]); // KEEP to Clear address suggestions
   };
+
 
 
   const removeHtmlTags = (text: string) => {
@@ -581,7 +589,6 @@ const App: React.FC = () => {
 
    <Text style={styles.header}>Halo Vision    Next Step in: {`${distanceToNextStep} m`}</Text>
 
-   <React.Fragment>
       <TextInput
         placeholder="Current Location"
         style={styles.input}
@@ -596,45 +603,33 @@ const App: React.FC = () => {
         />
       {potentialAddresses.length > 0 && (
         <ScrollView style={styles.addressesContainer}>
-          {potentialAddresses.map((address, index) => (
+          {potentialAddresses.map((address, index) => ( //address auto-fill
             <TouchableOpacity
               key={index}
               onPress={() => {
+                forwardGeocode(address.place_name); 
                 handleAddressSelect(address.place_name);
-              }}
-            >
+              }}>
               <Text style={styles.addressText}>{address.place_name || ''}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
-    </React.Fragment>
+
 
           <TouchableOpacity style={styles.connectButton}>
-              <Text>{isConnected ? 'Connected' : 'Not connected'}
-              </Text>
+              <Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
           </TouchableOpacity>
 
-      <TouchableOpacity onPress={fetchDirections}>
-        <Text style={{ color: 'white',
-          marginTop: 3,
-          padding: 4,
-          backgroundColor: 'cornflowerblue',
-          textAlign: 'center',}}> {'Get directions'}
-        </Text>
-      </TouchableOpacity>
- 
-    {/* <View>
-      <FlatList
-        data={devices}  
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => setSelectedDevice(item)}>
-            <Text>{item.name || 'Unnamed Device'}</Text>
+          <TouchableOpacity onPress={fetchDirections}>
+            <Text style={{ color: 'white',
+              marginTop: 3,
+              padding: 4,
+              backgroundColor: 'cornflowerblue',
+              textAlign: 'center',}}> {'Get directions'}
+            </Text>
           </TouchableOpacity>
-        )}
-      />   
-      </View> */}
+
 
             {directions && displayedStepIndex < routeSteps.length && (   //solo step shown
                 <View style={styles.currentStepContainer}>
@@ -691,7 +686,7 @@ const App: React.FC = () => {
               </Text>
               </TouchableOpacity>
               )}
-                </View> 
+          </View> 
      
     
          {!mapVisible && directions && (
@@ -714,16 +709,16 @@ const App: React.FC = () => {
 
           {/* Render the route using MapViewDirections */}
           <MapViewDirections
-            origin={currentLocation}
+            origin={startingLocation}
             destination={destination}
             apikey={GOOGLE_MAPS_API_KEY}
             strokeWidth={3}
             strokeColor="red"
           />
 
-                  {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
-                    (!completedSteps.includes(index) || distanceToNextStep!==null && distanceToNextStep < waypointThreshold) && ( //only renders if they havent been completed, or if theyre further away than the threshold
-                      <Marker
+            {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
+                 (!completedSteps.includes(index) || distanceToNextStep!==null && distanceToNextStep < waypointThreshold) && ( //only renders if they havent been completed, or if theyre further away than the threshold
+                    <Marker
                         key={index}
                         coordinate={{
                           latitude: step.start_location.lat,
@@ -734,15 +729,15 @@ const App: React.FC = () => {
                     )
                   ))}
           {DestinationCoordinates.latitude && DestinationCoordinates.longitude && (
-             <Marker
-                 coordinate={{
-                      latitude: DestinationCoordinates.latitude,
-                  longitude: DestinationCoordinates.longitude,
-            }}
-            title="Final Destination"
-            pinColor="green" />
-            )}
-        </MapView>
+              <Marker
+                    coordinate={{
+                    latitude: DestinationCoordinates.latitude,
+                    longitude: DestinationCoordinates.longitude,
+                  }}
+                  title="Final Destination"
+                  pinColor="green" />
+                  )}
+          </MapView>
       )}
        
         <View>
@@ -935,7 +930,6 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
 
 
 
