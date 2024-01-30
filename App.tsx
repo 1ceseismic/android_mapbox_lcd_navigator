@@ -85,7 +85,9 @@ const App: React.FC = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [manager, setManager] = useState<BleManager | null>(null);
 
-  const [outputString, setOutputString] = useState<string>(''); // State variable for outputString
+    const [outputString, setOutputString] = useState<string>(''); // State variable for outputString
+    const [maneuverString, setManeuverString] = useState<string>(''); // Initialize with an empty string
+
   const [circleRadius, setCircleRadius] = useState(0);
 
     useEffect(() => {  //runs one time on load
@@ -104,29 +106,29 @@ const App: React.FC = () => {
       }
     }, [navigationStarted, currentStepIndex, currentLocation, outputString]); 
     
-    useEffect(() => {
-      if (directions && displayedStepIndex < routeSteps.length) {
-        const currentStep = routeSteps[displayedStepIndex];
+    // useEffect(() => {
+    //   if (directions && displayedStepIndex < routeSteps.length) {
+    //     const currentStep = routeSteps[displayedStepIndex];
   
-        // Update outputString with the current step information
-        const newOutputString = `${displayedStepIndex + 1}. ${
-          displayedStepIndex > 0
-            ? `In ${formatDistance(
-                routeSteps[displayedStepIndex - 1].distance.value,
-                routeSteps[displayedStepIndex - 1].distance.unit
-              )}, `
-            : ''
-        }${removeHtmlTags(
-          currentStep.html_instructions || currentStep.instructions || ''
-        )}`;
+    //     // Update outputString with the current step information
+    //     const newOutputString = `${displayedStepIndex + 1}. ${
+    //       displayedStepIndex > 0
+    //         ? `In ${formatDistance(
+    //             routeSteps[displayedStepIndex - 1].distance.value,
+    //             routeSteps[displayedStepIndex - 1].distance.unit
+    //           )}, `
+    //         : ''
+    //     }${removeHtmlTags(
+    //       currentStep.html_instructions || currentStep.instructions || ''
+    //     )}`;
   
-        // Set the updated outputString
-        setOutputString(newOutputString);
+    //     // Set the updated outputString
+    //     setOutputString(newOutputString);
   
-        // Pass the updated outputString to sendInstructions
-        sendInstructions(newOutputString);
-      }
-    }, [directions, displayedStepIndex, routeSteps]);
+    //     // Pass the updated outputString to sendInstructions
+    //     sendInstructions(newOutputString);
+    //   }
+    // }, [directions, displayedStepIndex, routeSteps]);
 
 
     const checkLocationPermission = async () => {
@@ -213,7 +215,6 @@ const App: React.FC = () => {
 
         if(navigationStarted){ //updating live
           setCircleRadius(5);
-          setCurrentLocation({ latitude, longitude });
 
           const nextStep = routeSteps[currentStepIndex];
 
@@ -222,11 +223,34 @@ const App: React.FC = () => {
             currentLocation.longitude,
             nextStep.start_location.lat,
             nextStep.start_location.lng
-          ); 
+          )
+          const roundedDistance = Math.round(calculatedDistanceToNextStep)
+
             if (calculatedDistanceToNextStep!==null){
-              setDistanceToNextStep(Math.round(calculatedDistanceToNextStep)) //rounded dist to next step
+              setDistanceToNextStep(roundedDistance)
+              
+              if (calculatedDistanceToNextStep < waypointThreshold){
+                  updateRouteifClose();
+
+              }
+               //rounded dist to next step
               console.log('set distance to next step: ', calculatedDistanceToNextStep)
-              updateRouteifClose();
+
+              const newOutputString = `${displayedStepIndex + 1}. ${
+                displayedStepIndex > 0
+                  ? `In ${formatDistance(
+                      routeSteps[displayedStepIndex - 1].distance.value,
+                      routeSteps[displayedStepIndex - 1].distance.unit
+                    )}, `
+                  : ''
+              }${removeHtmlTags(
+                nextStep.html_instructions || nextStep.instructions || ''
+              )}`;
+
+              setOutputString(newOutputString);
+
+              // Pass the updated outputString and calculated distance to sendInstructions
+              sendInstructions(`${newOutputString}@${roundedDistance}m away@${maneuverString}@${exitNumber}`);
             }
 
           console.log('Navigation started, explicitly updating user location')
@@ -242,7 +266,7 @@ const App: React.FC = () => {
         console.error('Error getting location:', error);
       },
     
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000}
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000}
       ); 
     
   };
@@ -379,6 +403,18 @@ const App: React.FC = () => {
           route.legs.forEach((leg, legIndex) => {
             leg.steps.forEach((step, stepIndex) => {
               steps.push(step);
+
+              const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
+              setManeuverString(maneuverString);
+               if (maneuverString && maneuverString.includes('roundabout')) {
+
+                  const instructionString = step.html_instructions.toString()
+                  const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
+
+                 const newExitNumber = match ? parseInt(match[0]) : null;
+                  setExitNumber(newExitNumber);
+               }
+
             });
           });
         });
@@ -476,7 +512,7 @@ const App: React.FC = () => {
         console.log('within threshold distance')
 
           if (!completedSteps.includes(currentStepIndex)) {
-            sendInstructions(outputString);
+            //sendInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
             setDisplayedStepIndex((currentStepIndex) => currentStepIndex+1);
@@ -498,6 +534,7 @@ const App: React.FC = () => {
        }
         else{
           console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', distanceToNextStep)
+          console.log('nextstep start: ', nextStep.start_location)
         }
         // if(distanceToNextStep !== null){ 
         //    setDistanceToNextStep(Math.round(distanceToNextStep));
@@ -931,6 +968,5 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
 
 
