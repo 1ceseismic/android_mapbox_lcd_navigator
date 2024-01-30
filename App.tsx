@@ -69,7 +69,8 @@ const App: React.FC = () => {
   const [distanceToNextStep, setDistanceToNextStep] = useState<number | null>(null);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [showAllDirections, setShowAllDirections] = useState(false);
-  const [currentManeuver, setCurrentManeuver] = useState<string>('');
+  const [currentLocationEncoded, setCurrentLocationEncoded] = useState<string>('');
+
 
   const [mapVisible, setMapVisible] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -209,7 +210,7 @@ const App: React.FC = () => {
         else { //starting new route so search for address
           console.log('new route, reverse geocoding...')
           setCurrentLocation({ latitude, longitude });
-          reverseGeocode(latitude, longitude, false);
+          reverseGeocode(latitude, longitude);
         }
       },
       (error) => {
@@ -220,7 +221,7 @@ const App: React.FC = () => {
       ); 
     
   };
-  const reverseGeocode = async (latitude: number, longitude: number, address: boolean) => { //false for normal, true for watching user
+  const reverseGeocode = async (latitude: number, longitude: number) => { //false for normal, true for watching user
     try {
       const response = await fetch(
         `${API_BASE_URL}${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`
@@ -229,9 +230,9 @@ const App: React.FC = () => {
       if (data.features && data.features.length > 0) {
         const nearestAddress = (data.features[0] as AddressFeature).place_name || '';
 
-        if (response.ok && address == false)  {  //setting destination address
+        if (response.ok)  {  //setting destination address
           setStartingLocation(nearestAddress);
-        } else if (response.ok && address == true) {
+        } else if (response.ok) {
         return nearestAddress;
 
       }    
@@ -258,29 +259,32 @@ const App: React.FC = () => {
            const location_type = data.results[0].geometry.location_type;
             console.log('location type', location_type)
 
-            if (location_type === 'ROOFTOP' || location_type === 'RANGE_INTERPOLATED' || location_type === 'APPROXIMATE') {
+            if (!isChangingCurrentLocation && location_type === 'ROOFTOP' || location_type === 'RANGE_INTERPOLATED' || location_type === 'APPROXIMATE') {
               setDestinationCoordinates({
                 latitude: location.lat,
                 longitude: location.lng,
               });
+              console.log('set destination coords in forwardGeocode')
             }
-           
+            else if (isChangingCurrentLocation && location_type === 'ROOFTOP' || location_type === 'RANGE_INTERPOLATED' || location_type === 'APPROXIMATE') {
+              console.log('returned cLocation coords in forwardGeocode')
+             return location;
           } else {
             console.error('Location not found');
           }
         } else {
           console.error('Error with forward geocode:', response.status);
         }
-      } catch (error) {
-        console.error('Error with forward geocode:', error);
-      }
-    };
+      } 
+    }catch (error) {
+      console.error('Error with forward geocode:', error);
+    }
+  };
 
   const fetchPotentialAddresses = async (choice: string) => {
     try {
       if (choice === 'destination') {
         if (destination.length > 0) {
-
           const response = await fetch(
             `${API_BASE_URL}${encodeURIComponent(destination)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
           );
@@ -296,8 +300,8 @@ const App: React.FC = () => {
         }
 
       } else if (choice === 'starting'){ 
-        if (startingLocation.length > 0) {
 
+        if (startingLocation.length > 0) {
           const response = await fetch(
             `${API_BASE_URL}${encodeURIComponent(startingLocation)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&country=NZ`
           );
@@ -321,22 +325,21 @@ const App: React.FC = () => {
  
 
   const fetchDirections = async () => {
+    setIsChangingCurrentLocation(false); //resetting
+
     console.log('Destination Coordinates:', DestinationCoordinates);
-
+    console.log('Current Location:', currentLocation)
     try {
+      console.log('current location encoded: ', currentLocationEncoded)
 
-      console.log('fetching directions');
-      const currentLocationReversed = await reverseGeocode(currentLocation.latitude, currentLocation.longitude, true);
-
-      const currentLocationEncoded = encodeURIComponent(currentLocationReversed);
+      const startingLocationEncoded = encodeURIComponent(startingLocation);
       const destinationLocationEncoded = encodeURIComponent(destination);
-
       console.log('currentLocationEncoded: ', currentLocationEncoded)
       console.log('destinationLocatedEncoded: ', destinationLocationEncoded)
 
   
       const response = await fetch( 
-        `${GOOGLE_DIRECTIONS_API}?origin=${currentLocationEncoded}&destination=${destinationLocationEncoded}&key=${GOOGLE_MAPS_API_KEY}`
+        `${GOOGLE_DIRECTIONS_API}?origin=${startingLocationEncoded}&destination=${destinationLocationEncoded}&key=${GOOGLE_MAPS_API_KEY}`
       );
   
       if (response.ok) {
@@ -352,7 +355,6 @@ const App: React.FC = () => {
           route.legs.forEach((leg, legIndex) => {
             leg.steps.forEach((step, stepIndex) => {
               steps.push(step);
-
 
               sendInstructions(outputString);
             });
@@ -503,28 +505,35 @@ const App: React.FC = () => {
     return deg * (Math.PI / 180);
   };
 
-  const handleDestinationChange = (text: string, choice: boolean) => {
-    if (choice == false) {
-      setDestination(text); 
-      fetchPotentialAddresses('destination');
-      setIsChangingCurrentLocation(false); //false = entering desintation
+  const handleAddressChange = async (text: string) => {
 
-    }
-    else if (choice) {
-      setStartingLocation(text); //true = address
-      fetchPotentialAddresses('starting');
-      setIsChangingCurrentLocation(true);
-    }
-    setNavigationStarted(false); // Reset navigation status when destination changes
+    setStartingLocation(text); 
+    fetchPotentialAddresses('starting');
+    setIsChangingCurrentLocation(true);
   };
 
+  const handleDestinationChange = async (text: string) => {
 
-  const handleAddressSelect = (selectedAddress: string) => {
-    //console.log('ischangingcurrentlocation?: ', isChangingCurrentLocation)
+      setDestination(text);
+      fetchPotentialAddresses('destination');
+      setIsChangingCurrentLocation(false);
+  };
+
+  const handleAddressSelect = async (selectedAddress: string) => {
     if (isChangingCurrentLocation) {
+
       setStartingLocation(selectedAddress);
+      setDestination(destination);
+      console.log('selected address in handleaddress: ', selectedAddress)
+
+      setCurrentLocationEncoded(encodeURIComponent(selectedAddress));
+      setStartingLocation(selectedAddress);
+
     } else {
       setDestination(selectedAddress);
+      setStartingLocation(startingLocation);
+      setCurrentLocationEncoded(encodeURIComponent(startingLocation));
+      console.log('current location encoded: ', currentLocationEncoded)
     }
     setPotentialAddresses([]); // KEEP to Clear address suggestions
   };
@@ -593,13 +602,13 @@ const App: React.FC = () => {
         placeholder="Current Location"
         style={styles.input}
         value={startingLocation}
-        onChangeText={(text) => handleDestinationChange(text, true)}
+        onChangeText={(text) => handleAddressChange(text)}
         />
       <TextInput
         style={styles.input}
         placeholder="Destination"
         value={destination}
-        onChangeText={(text) => handleDestinationChange(text, false)}
+        onChangeText={(text) => handleDestinationChange(text)}
         />
       {potentialAddresses.length > 0 && (
         <ScrollView style={styles.addressesContainer}>
@@ -906,8 +915,8 @@ innerContainer:{
     color: 'white', 
   },
   addressesContainer: {
-    maxHeight: 150,
-    marginBottom: 10,
+    maxHeight: 250,
+    marginBottom: 2,
     color: 'white',
   },
   addressText: {
