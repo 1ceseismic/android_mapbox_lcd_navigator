@@ -12,11 +12,11 @@ const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/j
 
 import MapView, {PROVIDER_GOOGLE, Polyline, Marker, MapCalloutSubview, Circle } from 'react-native-maps';
 import {enableLatestRenderer} from 'react-native-maps';
-import BluetoothSerialNext, { connect } from 'react-native-bluetooth-serial-next';
+import BluetoothSerialNext,  { connect } from 'react-native-bluetooth-serial-next';
 import {BleManager, BleError, Device } from 'react-native-ble-plx';
 import BluetoothStateManager from 'react-native-bluetooth-state-manager';
-
-const CHARACTERISTIC_UUID = '19B10001-E8F2-537E-4F6C-D104768A1214'; 
+import BluetoothSerial from 'react-native-bluetooth-serial-next';
+import Modal from 'react-native-modal';
 
 enableLatestRenderer();
 const waypointThreshold = 10;
@@ -33,7 +33,6 @@ interface Step {
   start_location: { lat: number; lng: number };
   end_location: { lat: number; lng: number };
 }
-
 interface Leg {
   distance: any;
   start_location: any;
@@ -48,9 +47,12 @@ interface DirectionsResponse {
   routes: Route[];
 }
 
+interface BluetoothDevice {
+  id: string;
+  name?: string;
+  address: string;
+}
 const App: React.FC = () => { 
-
-
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [destination, setDestination] = useState('');
   const [potentialAddresses, setPotentialAddresses] = useState<AddressFeature[]>([]);
@@ -71,7 +73,6 @@ const App: React.FC = () => {
   const [showAllDirections, setShowAllDirections] = useState(false);
   const [currentLocationEncoded, setCurrentLocationEncoded] = useState<string>('');
 
-
   const [mapVisible, setMapVisible] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
   const [totalTravelDistance, setTotalTravelDistance] = useState<number | null>(null);
@@ -84,13 +85,21 @@ const App: React.FC = () => {
     //for bte module
     const [isConnected, setIsConnected] = useState(false);
     const [manager, setManager] = useState<BleManager | null>(null);
+    const [connectedDevices, setConnectedDevices] = useState([]);
+    const [pairedDevices, setPairedDevices] = useState<BluetoothDevice[]>([]);
+    const [isModalVisible, setModalVisible] = useState(false);
+    const [selectedDevice, setSelectedDevice] = useState<BluetoothDevice | null>(null); // Declare the type of selectedDevice
 
-  const [circleRadius, setCircleRadius] = useState(0);
-  let outputString = ''; 
+    const toggleModal = () => {
+      setModalVisible(!isModalVisible);
+    };
+
+    const [circleRadius, setCircleRadius] = useState(0);
+    let outputString = ''; 
 
     useEffect(() => {  //runs one time on load
       checkLocationPermission();
-      //checkBluetoothPermissions();
+      checkBluetoothPermissions();
     }, []);
 
     useEffect(() => { //runs on loop with delay
@@ -143,15 +152,14 @@ const App: React.FC = () => {
      
       try {
         BluetoothStateManager.enable().then(() => {
-          console.log('Bluetooth is turned on');
-            connectToDevice();
+          console.log('Bluetooth is now enabled');
+          fetchPairedDevices();
           
       });
         
         const result = await BluetoothStateManager.requestToEnable();
         if (result) {
-          connectToDevice();
-          console.log('bt enabled, scanning for devices')
+          fetchPairedDevices();
         } else {
           console.warn('Bluetooth is not enabled.');
         }
@@ -159,13 +167,34 @@ const App: React.FC = () => {
         console.error('Error checking Bluetooth permissions:', error);
       }
     };
-    const connectToDevice = async () => {
+
+    const fetchPairedDevices = async () => {
       try {
-        const device = await BluetoothSerialNext.list();
-        if (device.length > 0) {
-          await BluetoothSerialNext.connect(device[0].id);
-          setIsConnected(true);
-        }
+        const devices = await BluetoothSerial.list();
+        setPairedDevices(devices as BluetoothDevice[]);
+      } catch (error) {
+        console.error('Error fetching paired devices:', error);
+      }
+    };
+    
+    const renderItem = ({ item }: { item: BluetoothDevice }) => (
+      <TouchableOpacity
+        style={styles.itemContainer}
+        onPress={() => {
+          setSelectedDevice(item);
+          toggleModal();
+        }}
+        disabled={isConnected}
+      >
+        <Text>{item.name || item.address}</Text>
+      </TouchableOpacity>
+    );
+
+
+    const connectToDevice = async (deviceId: string) => {
+      try {
+        await BluetoothSerial.connect(deviceId);
+        setIsConnected(true);
       } catch (error) {
         console.error('Error connecting to Bluetooth device:', error);
       }
@@ -217,7 +246,7 @@ const App: React.FC = () => {
         console.error('Error getting location:', error);
       },
     
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000}
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1500}
       ); 
     
   };
@@ -528,6 +557,7 @@ const App: React.FC = () => {
 
       setCurrentLocationEncoded(encodeURIComponent(selectedAddress));
       setStartingLocation(selectedAddress);
+      setPotentialAddresses([]); // KEEP to Clear address suggestions
 
     } else {
       setDestination(selectedAddress);
@@ -625,10 +655,33 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
+      <TouchableOpacity style={styles.openModalButton} onPress={toggleModal} disabled={isConnected}>
+        <Text>Open Bluetooth Devices</Text>
+      </TouchableOpacity>
 
-          <TouchableOpacity style={styles.connectButton}>
-              <Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
-          </TouchableOpacity>
+      <Modal isVisible={isModalVisible} onBackdropPress={toggleModal}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Select a Bluetooth Device</Text>
+          {pairedDevices.length > 0 ? (
+            pairedDevices.map((device) => (
+              <TouchableOpacity
+                key={device.id}
+                style={styles.itemContainer}
+                onPress={() => {
+                  setSelectedDevice(device);
+                  toggleModal();
+                }}
+                disabled={isConnected}
+              >
+                <Text>{device.name || device.address}</Text>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <Text>No paired devices found.</Text>
+          )}
+        </View>
+      </Modal>
+
 
           <TouchableOpacity onPress={fetchDirections}>
             <Text style={{ color: 'white',
@@ -696,8 +749,10 @@ const App: React.FC = () => {
               </TouchableOpacity>
               )}
           </View> 
-     
+
+      
     
+
          {!mapVisible && directions && (
         <MapView
         style={{ flex: 1 }}
@@ -851,6 +906,28 @@ innerContainer:{
     padding: 4,
     backgroundColor: 'olivedrab',
     textAlign: 'center',
+  },
+
+  openModalButton: {
+    padding: 10,
+    backgroundColor: '#ccc',
+    marginVertical: 10,
+    borderRadius: 5,
+  },
+  itemContainer: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+  },
+  modalContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
 
   showAllDirectionsButton: {
