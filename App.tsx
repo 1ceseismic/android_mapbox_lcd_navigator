@@ -94,8 +94,10 @@ const App: React.FC = () => {
       setModalVisible(!isModalVisible);
     };
 
-    const [circleRadius, setCircleRadius] = useState(0);
-    let outputString = ''; 
+    const [outputString, setOutputString] = useState<string>(''); // State variable for outputString
+    const [maneuverString, setManeuverString] = useState<string>(''); // Initialize with an empty string
+
+  const [circleRadius, setCircleRadius] = useState(0);
 
     useEffect(() => {  //runs one time on load
       checkLocationPermission();
@@ -108,11 +110,13 @@ const App: React.FC = () => {
           fetchUserLocation()
         }, 2000); // check user location + calculation delay
     
-        // Clear the interval when the component unmounts or navigation stops
+        // clear the interval when the component unmounts / or navigation stops
         return () => clearInterval(locationUpdateInterval);
       }
-    }, [navigationStarted, currentStepIndex, currentLocation]);
+    }, [navigationStarted, currentStepIndex, currentLocation, outputString]); 
     
+
+
     const checkLocationPermission = async () => {
       try {
         const result = await check(
@@ -217,7 +221,6 @@ const App: React.FC = () => {
 
         if(navigationStarted){ //updating live
           setCircleRadius(5);
-          setCurrentLocation({ latitude, longitude });
 
           const nextStep = routeSteps[currentStepIndex];
 
@@ -226,11 +229,34 @@ const App: React.FC = () => {
             currentLocation.longitude,
             nextStep.start_location.lat,
             nextStep.start_location.lng
-          ); 
+          )
+          const roundedDistance = Math.round(calculatedDistanceToNextStep)
+
             if (calculatedDistanceToNextStep!==null){
-              setDistanceToNextStep(Math.round(calculatedDistanceToNextStep)) //rounded dist to next step
+              setDistanceToNextStep(roundedDistance)
+              
+              if (calculatedDistanceToNextStep < waypointThreshold){
+                  updateRouteifClose();
+
+              }
+               //rounded dist to next step
               console.log('set distance to next step: ', calculatedDistanceToNextStep)
-              updateRouteifClose();
+
+              const newOutputString = `${displayedStepIndex + 1}. ${
+                displayedStepIndex > 0
+                  ? `In ${formatDistance(
+                      routeSteps[displayedStepIndex - 1].distance.value,
+                      routeSteps[displayedStepIndex - 1].distance.unit
+                    )}, `
+                  : ''
+              }${removeHtmlTags(
+                nextStep.html_instructions || nextStep.instructions || ''
+              )}`;
+
+              setOutputString(newOutputString);
+
+              // Pass the updated outputString and calculated distance to sendInstructions
+              sendInstructions(`${newOutputString}@${roundedDistance}m away@${maneuverString}@${exitNumber}`);
             }
 
           console.log('Navigation started, explicitly updating user location')
@@ -357,13 +383,12 @@ const App: React.FC = () => {
     setIsChangingCurrentLocation(false); //resetting
 
     console.log('Destination Coordinates:', DestinationCoordinates);
-    console.log('Current Location:', currentLocation)
+    console.log('Current Location coords:', currentLocation)
     try {
-      console.log('current location encoded: ', currentLocationEncoded)
 
       const startingLocationEncoded = encodeURIComponent(startingLocation);
       const destinationLocationEncoded = encodeURIComponent(destination);
-      console.log('currentLocationEncoded: ', currentLocationEncoded)
+      console.log('current location URI encoded: ', currentLocationEncoded)
       console.log('destinationLocatedEncoded: ', destinationLocationEncoded)
 
   
@@ -385,7 +410,17 @@ const App: React.FC = () => {
             leg.steps.forEach((step, stepIndex) => {
               steps.push(step);
 
-              sendInstructions(outputString);
+              const maneuverString = step.maneuver ? step.maneuver.toString() : ''; // Convert to string if defined
+              setManeuverString(maneuverString);
+               if (maneuverString && maneuverString.includes('roundabout')) {
+
+                  const instructionString = step.html_instructions.toString()
+                  const match = instructionString.match(/(\d+)(st|nd|rd|th)/);
+
+                 const newExitNumber = match ? parseInt(match[0]) : null;
+                  setExitNumber(newExitNumber);
+               }
+
             });
           });
         });
@@ -455,8 +490,7 @@ const App: React.FC = () => {
           //   });
           // });
 
-          // setRouteSteps(steps);
-          // setNavigationStarted(true); // start live updates
+        
         } else {
           console.error('Error fetching directions:', response.status);
         }
@@ -465,7 +499,7 @@ const App: React.FC = () => {
       }
     };
 
-    const sendInstructions = async (instructions: string | BluetoothSerialNext.Buffer) => {
+    const sendInstructions = async (instructions: string) => {
       try {
         await BluetoothSerialNext.write(instructions);
         console.log('Instructions sent successfully:', instructions);
@@ -484,7 +518,7 @@ const App: React.FC = () => {
         console.log('within threshold distance')
 
           if (!completedSteps.includes(currentStepIndex)) {
-            sendInstructions(outputString);
+            //sendInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
             setDisplayedStepIndex((currentStepIndex) => currentStepIndex+1);
@@ -506,6 +540,7 @@ const App: React.FC = () => {
        }
         else{
           console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', distanceToNextStep)
+          console.log('nextstep start: ', nextStep.start_location)
         }
         // if(distanceToNextStep !== null){ 
         //    setDistanceToNextStep(Math.round(distanceToNextStep));
@@ -703,20 +738,7 @@ const App: React.FC = () => {
                       />
                     ) : null}
                   </View>
-                  <Text style={styles.directionsText}>
-                    {`${displayedStepIndex + 1}. ${
-                      displayedStepIndex > 0
-                        ? `In ${formatDistance(
-                            routeSteps[displayedStepIndex - 1].distance.value,
-                            routeSteps[displayedStepIndex - 1].distance.unit
-                          )}, `
-                        : ''
-                    }${removeHtmlTags(
-                      routeSteps[displayedStepIndex].html_instructions ||
-                        routeSteps[displayedStepIndex].instructions ||
-                        ''
-                    )}`}
-                  </Text>
+                  <Text style={styles.directionsText}>{outputString}</Text>
                 </View>
               )}
 
@@ -750,8 +772,6 @@ const App: React.FC = () => {
               )}
           </View> 
 
-      
-    
 
          {!mapVisible && directions && (
         <MapView
@@ -779,9 +799,8 @@ const App: React.FC = () => {
             strokeWidth={3}
             strokeColor="red"
           />
-
             {directions.routes[0]?.legs[0]?.steps?.map((step, index) => (
-                 (!completedSteps.includes(index) || distanceToNextStep!==null && distanceToNextStep < waypointThreshold) && ( //only renders if they havent been completed, or if theyre further away than the threshold
+                 (!completedSteps.includes(index) || distanceToNextStep!==null && distanceToNextStep < waypointThreshold) && ( 
                     <Marker
                         key={index}
                         coordinate={{
@@ -789,7 +808,7 @@ const App: React.FC = () => {
                           longitude: step.start_location.lng,
                         }}
                         title={`Step ${index + 1}`}
-                      />
+                      />  //only renders if they havent been completed, or if theyre further away than the threshold
                     )
                   ))}
           {DestinationCoordinates.latitude && DestinationCoordinates.longitude && (
@@ -807,56 +826,41 @@ const App: React.FC = () => {
         <View>
       </View>
 
-      {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && (
+      {directions && (showAllDirections || displayedStepIndex === routeSteps.length - 1) && ( //all steps shown
         <ScrollView style={styles.directionsContainer}>
           {directions.routes.map((route, routeIndex) => (
             <View key={routeIndex}>
               {route.legs.map((leg, legIndex) => (
                 <View key={legIndex}>
-                  {leg.steps.map((step, stepIndex) => {
-                    // Update the outputString with the current step's formatted instruction
-                    outputString += `${stepIndex + 1}. ${
-                      stepIndex > 0
-                        ? `In ${formatDistance(
-                            leg.steps[stepIndex - 1].distance.value,
-                            leg.steps[stepIndex - 1].distance.unit
-                          )}, `
-                        : ''
-                    }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}\n`;
-
-                    return (
-                      <View
-                        key={stepIndex}
-                        style={[
-                          styles.directionsRow,
-                          completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,
-                        ]}>
-                        <View style={styles.directionsIcon}>
-                          {instructionIcons[step.maneuver] ? (
-                            <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} />
-                          ) : null}
-                        </View>
-                        <Text style={[styles.directionsText, { color: 'white', maxWidth: screenWidth - 60 }]}>
-                          {`${stepIndex + 1}. ${
-                            stepIndex > 0
-                              ? `In ${formatDistance(
-                                  leg.steps[stepIndex - 1].distance.value,
-                                  leg.steps[stepIndex - 1].distance.unit
-                                )}, `
-                              : ''
-                          }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
-                        </Text>
+                  {leg.steps.map((step, stepIndex) => (
+                    <View
+                      key={stepIndex}
+                      style={[ 
+                        styles.directionsRow, completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,]}>
+                      <View style={styles.directionsIcon}>
+                        {instructionIcons[step.maneuver] ? (
+                          <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} /> //maneuver image 
+                        ) : null}
                       </View>
-                    );
-                  })}
+                      <Text style={[styles.directionsText, { color: 'white', maxWidth: screenWidth - 60 }]}>
+                        {`${stepIndex + 1}. ${
+                          stepIndex > 0
+                            ? `In ${formatDistance(
+                                leg.steps[stepIndex - 1].distance.value,
+                                leg.steps[stepIndex - 1].distance.unit
+                              )}, `
+                            : ''
+                        }${removeHtmlTags(step?.html_instructions || step?.instructions || '')}`}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               ))}
             </View>
           ))}
         </ScrollView>
       )}
-
-                  
+      
     </View>
   );
 };
@@ -1016,6 +1020,5 @@ export default App;
 function readFileSync(arg0: string, arg1: string) {
   throw new Error('Function not implemented.');
 }
-
 
 
