@@ -181,11 +181,12 @@ const App: React.FC = () => {
       }
     };
     
-    const renderItem = ({ item }: { item: BluetoothDevice }) => (
+    const renderDeviceItem = ({ item }: { item: BluetoothDevice }) => (
       <TouchableOpacity
+        key={item.id}
         style={styles.itemContainer}
         onPress={() => {
-          setSelectedDevice(item);
+          connectToDevice(item);
           toggleModal();
         }}
         disabled={isConnected}
@@ -195,10 +196,13 @@ const App: React.FC = () => {
     );
 
 
-    const connectToDevice = async (deviceId: string) => {
+    const connectToDevice = async (device: BluetoothDevice | null) => {
       try {
-        await BluetoothSerial.connect(deviceId);
-        setIsConnected(true);
+        if (device) {
+          await BluetoothSerial.connect(device.id);
+          setIsConnected(true);
+          
+        }
       } catch (error) {
         console.error('Error connecting to Bluetooth device:', error);
       }
@@ -501,8 +505,12 @@ const App: React.FC = () => {
 
     const sendInstructions = async (instructions: string) => {
       try {
-        await BluetoothSerialNext.write(instructions);
-        console.log('Instructions sent successfully:', instructions);
+        if (selectedDevice) {
+          await BluetoothSerial.write(instructions, selectedDevice.id);
+          console.log('Instructions sent successfully:', instructions);
+        } else {
+          console.warn('No device selected.');
+        }
       } catch (error) {
         console.error('Error sending instructions:', error);
       }
@@ -690,6 +698,10 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
+          <TouchableOpacity style={styles.connectButton}>
+              <Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
+          </TouchableOpacity>
+
       <TouchableOpacity style={styles.openModalButton} onPress={toggleModal} disabled={isConnected}>
         <Text>Open Bluetooth Devices</Text>
       </TouchableOpacity>
@@ -698,19 +710,7 @@ const App: React.FC = () => {
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Select a Bluetooth Device</Text>
           {pairedDevices.length > 0 ? (
-            pairedDevices.map((device) => (
-              <TouchableOpacity
-                key={device.id}
-                style={styles.itemContainer}
-                onPress={() => {
-                  setSelectedDevice(device);
-                  toggleModal();
-                }}
-                disabled={isConnected}
-              >
-                <Text>{device.name || device.address}</Text>
-              </TouchableOpacity>
-            ))
+            pairedDevices.map((device) => renderDeviceItem({ item: device }))
           ) : (
             <Text>No paired devices found.</Text>
           )}
@@ -913,10 +913,11 @@ innerContainer:{
   },
 
   openModalButton: {
-    padding: 10,
+    padding: 3,
     backgroundColor: '#ccc',
-    marginVertical: 10,
+    marginVertical: 5,
     borderRadius: 5,
+    alignContent: 'center',
   },
   itemContainer: {
     padding: 10,
@@ -925,11 +926,11 @@ innerContainer:{
   },
   modalContainer: {
     backgroundColor: 'white',
-    padding: 20,
+    padding: 15,
     borderRadius: 10,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 10,
   },
