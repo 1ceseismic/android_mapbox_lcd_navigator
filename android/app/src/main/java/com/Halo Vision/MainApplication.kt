@@ -1,4 +1,4 @@
-package com.simpletest
+package com.HaloVision
 
 import android.app.Application
 import com.facebook.react.PackageList

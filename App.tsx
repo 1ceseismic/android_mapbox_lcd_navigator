@@ -106,19 +106,24 @@ const App: React.FC = () => {
       checkBluetoothPermissions();
       const manager = new BleManager();
       setBleManager(manager); 
-
+      setteststring('BT STATUS: Disconnected');
     }, []);
 
     useEffect(() => { //runs on loop with delay
       if (navigationStarted) {
         const locationUpdateInterval = setInterval(() => {
           fetchUserLocation()
-        }, 2000); // check user location + calculation delay
+        }, 5000); // check user location + calculation delay
     
         // clear the interval when the component unmounts / or navigation stops
         return () => clearInterval(locationUpdateInterval);
       }
     }, [navigationStarted, currentStepIndex, currentLocation, outputString, isConnected, teststring]); 
+
+    useEffect (() => {
+      
+
+    }, [distanceToNextStep])
     
 
 
@@ -191,9 +196,7 @@ const App: React.FC = () => {
          setteststring('onpress renderdeviceitem')
           connectToDevice(item);
           toggleModal();
-
         }}
-        disabled={isConnected}
       >
         <Text>{item.name || item.address}</Text>
       </TouchableOpacity>
@@ -204,6 +207,8 @@ const App: React.FC = () => {
     const connectToDevice = async (device: BluetoothDevice) => {
       try {
         if (device) {
+          await bleManager?.destroy();
+
           await BluetoothSerial.connect(device.id);
          setIsConnected(true);
           setConnectedDevice(device);
@@ -231,10 +236,11 @@ const App: React.FC = () => {
       Keyboard.dismiss(); //recess mobile keyboard by auto
     };
 
+    
   const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;``
+        const { latitude, longitude } = position.coords;
         setCurrentLocation({ latitude, longitude });
 
         if(navigationStarted){ //updating live
@@ -255,7 +261,7 @@ const App: React.FC = () => {
               
               if (calculatedDistanceToNextStep < waypointThreshold){
                   updateRouteifClose();
-
+                
               }
                //rounded dist to next step
               console.log('set distance to next step: ', calculatedDistanceToNextStep)
@@ -291,9 +297,11 @@ const App: React.FC = () => {
       },
     
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 1500}
-      ); 
-    
+      );  
   };
+
+
+
   const reverseGeocode = async (latitude: number, longitude: number) => { //false for normal, true for watching user
     try {
       const response = await fetch(
@@ -520,7 +528,15 @@ const App: React.FC = () => {
     const sendInstructions = async (instructions: string) => {
       try {
         if (connectedDevice) {
-          await BluetoothSerial.write(instructions, connectedDevice.id);
+          const maxSegmentLength = 32;
+          const instructionSegments = instructions.split('@');
+    
+          for (const segment of instructionSegments) {
+            const trimmedSegment = segment.trim().substring(0, maxSegmentLength);
+            await BluetoothSerial.write(trimmedSegment, connectedDevice.id);
+            console.log('Segment sent successfully:', trimmedSegment);
+          }
+    
           console.log('Instructions sent successfully:', instructions);
         } else {
           console.warn('No device selected.');
@@ -529,7 +545,7 @@ const App: React.FC = () => {
         console.error('Error sending instructions:', error);
       }
     };
-  
+    
 
     const updateRouteifClose = async () => {
       if (navigationStarted) {
@@ -677,7 +693,10 @@ const App: React.FC = () => {
   <View style={styles.container}>
     <View style={styles.innerContainer}>
 
-   <Text style={styles.header}>Halo Vision    Next Step in: {`${distanceToNextStep} m`}</Text>
+        <Text style={styles.header}>
+         HaloVision{'\n'}
+        Next Step in: {`${distanceToNextStep} m`}
+        </Text>
 
       <TextInput
         placeholder="Current Location"
@@ -710,7 +729,7 @@ const App: React.FC = () => {
         <Text>{teststring}</Text>
       </View>
 
-      <TouchableOpacity style={styles.openModalButton} onPress={toggleModal} disabled={isConnected}>
+      <TouchableOpacity style={styles.openModalButton} onPress={toggleModal}>
         <Text>Open Bluetooth Devices</Text>
       </TouchableOpacity>
 
@@ -759,13 +778,14 @@ const App: React.FC = () => {
           {!mapVisible ? (
             <TouchableOpacity onPress={handleShowMap}>
               <Text style={styles.hideMapButton}>
-                       Hide Map
+                       Hide Map - 
                 {totalTravelDistance !== null && (
                   <Text style={styles.totalDistanceText}>
-                    Total distance: {formatDistance(totalTravelDistance, 'm')}
+                   Total distance: {formatDistance(totalTravelDistance, 'm')}
                   </Text>
                 )}
           </Text>
+
             </TouchableOpacity>) : (
                 <TouchableOpacity onPress={handleShowMap}>
               <Text style={styles.showMapButton}>
@@ -999,12 +1019,12 @@ connectStatusContainer: {
   },
   distanceHeader: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 13,
     textAlign: 'center',
   },
 
   header: {
-    fontSize: 20,
+    fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 10,
     color: 'white', 
