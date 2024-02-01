@@ -84,12 +84,14 @@ const App: React.FC = () => {
 
     //for bte module
     const [isConnected, setIsConnected] = useState(false);
-    const [manager, setManager] = useState<BleManager | null>(null);
-    const [connectedDevices, setConnectedDevices] = useState([]);
+    const [bleManager, setBleManager] = useState<BleManager | null>(null);
+    const [connectedDevice, setConnectedDevice] =  useState<BluetoothDevice | null>(null);
     const [pairedDevices, setPairedDevices] = useState<BluetoothDevice[]>([]);
     const [isModalVisible, setModalVisible] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<BluetoothDevice | null>(null); // Declare the type of selectedDevice
+    
 
+    const [teststring, setteststring] = useState<string>('');
     const toggleModal = () => {
       setModalVisible(!isModalVisible);
     };
@@ -102,6 +104,9 @@ const App: React.FC = () => {
     useEffect(() => {  //runs one time on load
       checkLocationPermission();
       checkBluetoothPermissions();
+      const manager = new BleManager();
+      setBleManager(manager); 
+
     }, []);
 
     useEffect(() => { //runs on loop with delay
@@ -113,7 +118,7 @@ const App: React.FC = () => {
         // clear the interval when the component unmounts / or navigation stops
         return () => clearInterval(locationUpdateInterval);
       }
-    }, [navigationStarted, currentStepIndex, currentLocation, outputString]); 
+    }, [navigationStarted, currentStepIndex, currentLocation, outputString, isConnected, teststring]); 
     
 
 
@@ -150,10 +155,7 @@ const App: React.FC = () => {
       }
     };
 
-    const checkBluetoothPermissions = async () => {
-      const bleManager = new BleManager();
-      setManager(bleManager);
-     
+    const checkBluetoothPermissions = async () => {   
       try {
         BluetoothStateManager.enable().then(() => {
           console.log('Bluetooth is now enabled');
@@ -186,8 +188,10 @@ const App: React.FC = () => {
         key={item.id}
         style={styles.itemContainer}
         onPress={() => {
+         setteststring('onpress renderdeviceitem')
           connectToDevice(item);
           toggleModal();
+
         }}
         disabled={isConnected}
       >
@@ -196,17 +200,27 @@ const App: React.FC = () => {
     );
 
 
-    const connectToDevice = async (device: BluetoothDevice | null) => {
+
+    const connectToDevice = async (device: BluetoothDevice) => {
       try {
         if (device) {
           await BluetoothSerial.connect(device.id);
-          setIsConnected(true);
-          
+         setIsConnected(true);
+          setConnectedDevice(device);
+          setteststring('STATUS: CONNECTED')
+        }
+        else {
+          setteststring('device wasnt valid')
+
+          console.warn('device is null in connecttodevice')
         }
       } catch (error) {
-        console.error('Error connecting to Bluetooth device:', error);
+        setteststring(`${error}`);
+
+        console.warn('Error connecting to Bluetooth device:', error);
       }
     };
+
 
     const handleShowAllDirections = () => {
       setShowAllDirections((prevValue) => !prevValue);
@@ -220,7 +234,7 @@ const App: React.FC = () => {
   const fetchUserLocation = () => {
     Geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude } = position.coords;``
         setCurrentLocation({ latitude, longitude });
 
         if(navigationStarted){ //updating live
@@ -505,8 +519,8 @@ const App: React.FC = () => {
 
     const sendInstructions = async (instructions: string) => {
       try {
-        if (selectedDevice) {
-          await BluetoothSerial.write(instructions, selectedDevice.id);
+        if (connectedDevice) {
+          await BluetoothSerial.write(instructions, connectedDevice.id);
           console.log('Instructions sent successfully:', instructions);
         } else {
           console.warn('No device selected.');
@@ -526,7 +540,6 @@ const App: React.FC = () => {
         console.log('within threshold distance')
 
           if (!completedSteps.includes(currentStepIndex)) {
-            //sendInstructions(outputString);
 
             setCompletedSteps([...completedSteps, currentStepIndex]);
             setDisplayedStepIndex((currentStepIndex) => currentStepIndex+1);
@@ -549,11 +562,7 @@ const App: React.FC = () => {
         else{
           console.log('not within threshhold (',waypointThreshold,') yet, calculated dist: ', distanceToNextStep)
           console.log('nextstep start: ', nextStep.start_location)
-        }
-        // if(distanceToNextStep !== null){ 
-        //    setDistanceToNextStep(Math.round(distanceToNextStep));
-        //   }
-          
+        }          
       }
     };
     
@@ -600,7 +609,6 @@ const App: React.FC = () => {
 
       setCurrentLocationEncoded(encodeURIComponent(selectedAddress));
       setStartingLocation(selectedAddress);
-      setPotentialAddresses([]); // KEEP to Clear address suggestions
 
     } else {
       setDestination(selectedAddress);
@@ -698,9 +706,9 @@ const App: React.FC = () => {
         </ScrollView>
       )}
 
-          <TouchableOpacity style={styles.connectButton}>
-              <Text>{isConnected ? 'Connected' : 'Not connected'}</Text>
-          </TouchableOpacity>
+      <View style={styles.connectButton}>
+        <Text>{teststring}</Text>
+      </View>
 
       <TouchableOpacity style={styles.openModalButton} onPress={toggleModal} disabled={isConnected}>
         <Text>Open Bluetooth Devices</Text>
@@ -715,7 +723,7 @@ const App: React.FC = () => {
             <Text>No paired devices found.</Text>
           )}
         </View>
-      </Modal>
+      </Modal> 
 
 
           <TouchableOpacity onPress={fetchDirections}>
@@ -754,7 +762,7 @@ const App: React.FC = () => {
                        Hide Map
                 {totalTravelDistance !== null && (
                   <Text style={styles.totalDistanceText}>
-                    {'\n'}Total distance: {formatDistance(totalTravelDistance, 'm')}
+                    Total distance: {formatDistance(totalTravelDistance, 'm')}
                   </Text>
                 )}
           </Text>
@@ -882,6 +890,11 @@ innerContainer:{
    //justifyContent: "space-between",  
    //alignItems: "center"  
 }, 
+connectStatusContainer: {
+    padding: 10,
+    backgroundColor: '#ccc',
+    borderRadius: 5,
+},
   directionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
