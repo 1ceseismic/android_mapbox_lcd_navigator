@@ -118,7 +118,7 @@ const App: React.FC = () => {
         // clear the interval when the component unmounts / or navigation stops
         return () => clearInterval(locationUpdateInterval);
       }
-    }, [navigationStarted, currentStepIndex, currentLocation, outputString, isConnected, teststring]); 
+    }, [navigationStarted, currentStepIndex, currentLocation, isConnected, teststring]); 
 
     useEffect (() => {
       
@@ -258,11 +258,8 @@ const App: React.FC = () => {
 
             if (calculatedDistanceToNextStep!==null){
               setDistanceToNextStep(roundedDistance)
+                  updateRouteifClose();  
               
-              if (calculatedDistanceToNextStep < waypointThreshold){
-                  updateRouteifClose();
-                
-              }
                //rounded dist to next step
               console.log('set distance to next step: ', calculatedDistanceToNextStep)
 
@@ -865,7 +862,8 @@ const App: React.FC = () => {
                     <View
                       key={stepIndex}
                       style={[ 
-                        styles.directionsRow, completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,]}>
+                        styles.directionsRow, 
+                        completedSteps.includes(currentStepIndex + stepIndex) && styles.completedStep,]}>
                       <View style={styles.directionsIcon}>
                         {instructionIcons[step.maneuver] ? (
                           <Image source={instructionIcons[step.maneuver]} style={{ width: 30, height: 30 }} /> //maneuver image 
