@@ -113,7 +113,7 @@ const App: React.FC = () => {
       if (navigationStarted) {
         const locationUpdateInterval = setInterval(() => {
           fetchUserLocation()
-        }, 5000); // check user location + calculation delay
+        }, 10000); // check user location + calculation delay
     
         // clear the interval when the component unmounts / or navigation stops
         return () => clearInterval(locationUpdateInterval);
@@ -280,7 +280,7 @@ const App: React.FC = () => {
               setOutputString(newOutputString);
 
               // Pass the updated outputString and calculated distance to sendInstructions
-              sendInstructions(`${newOutputString}@${roundedDistance}m away@${maneuverString}@${exitNumber}`);
+              sendInstructions(`${newOutputString}@${maneuverString}@${roundedDistance}m away`);
             }
 
           console.log('Navigation started, explicitly updating user location')
@@ -533,7 +533,7 @@ const App: React.FC = () => {
     
           for (const segment of instructionSegments) {
             const trimmedSegment = segment.trim().substring(0, maxSegmentLength);
-            await BluetoothSerial.write(trimmedSegment, connectedDevice.id);
+            await BluetoothSerial.write(trimmedSegment + '@', connectedDevice.id);
             console.log('Segment sent successfully:', trimmedSegment);
           }
     
@@ -545,6 +545,7 @@ const App: React.FC = () => {
         console.error('Error sending instructions:', error);
       }
     };
+    
     
 
     const updateRouteifClose = async () => {
