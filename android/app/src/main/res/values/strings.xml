@@ -1,3 +1,11 @@
 <resources>
+<<<<<<< Updated upstream
     <string name="app_name">HaloVision</string>
 </resources>
+=======
+  <string name="app_name">expo_attemp</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
+</resources>
+>>>>>>> Stashed changes

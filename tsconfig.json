@@ -1,5 +1,20 @@
 {
   "compilerOptions": {
+<<<<<<< Updated upstream
   },
   "extends": "@react-native/typescript-config/tsconfig.json"
+=======
+    "strict": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "components/AddressDropdown.tsx"
+  ]
+>>>>>>> Stashed changes
 }
